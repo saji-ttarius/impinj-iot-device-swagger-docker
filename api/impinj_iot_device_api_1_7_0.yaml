@@ -1,0 +1,4024 @@
+swagger: "2.0"
+info:
+  version: 1.7.0
+  title: Impinj Reader Configuration REST API
+  description: |
+    This API provides an interface for configuring RFID operations and reporting
+    streams on Impinj Readers as well as updating Impinj Reader firmware and
+    configuring system settings.
+
+    When retrieved from a reader, this OpenAPI Document is dynamically updated
+    based on the capabilities of the reader. See the '/openapi.json' path.
+  contact:
+    name: Impinj Developer Platform
+    url: https://platform.impinj.com
+    email: developer-feedback@impinj.com
+basePath: /api/v1
+schemes:
+  - https
+  - http
+consumes:
+  - application/json
+produces:
+  - application/json
+securityDefinitions:
+  basic:
+    type: basic
+    description: HTTP Basic Authentication.
+security:
+  - basic: []
+paths:
+  /openapi.json:
+    get:
+      summary: Get OpenAPI Document
+      description: |
+        Retrieve the OpenAPI Document for this Reader. The document describes the API using
+        reader-specific capabilities and constraints, such as region-specific transmit power limits
+        and supported RF Modes. It also includes definitions and paths associated with all
+        registered profiles. If the IoT Interface is disabled, this will only contain system
+        endpoints.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: object
+  /data/stream:
+    get:
+      summary: Get HTTP stream
+      description: |
+        Get reader event data as an HTTP stream
+
+        **Connecting**
+
+        To connect to the reader, form an HTTP request and consume the resulting stream for as long as is practical.
+        The reader will hold the connection open indefinitely, barring reader error, excessive client-side lag,
+        network hiccups, reader maintenance or duplicate logins. In the event there is no new data to stream for
+        an extended period of time, a keep-alive CR-LF character pair will be sent. See /http-stream path.
+
+        The method to form an HTTP request and parse the response will be different for every language or
+        framework, so consult the documentation for the HTTP library you are using.
+
+        Some HTTP client libraries only return the response body after the connection has been closed by the server.
+        These clients will not work for accessing data via HTTP streaming. You must use an HTTP client that will return
+        response data incrementally. Most robust HTTP client libraries will provide this functionality. The Apache
+        HttpClient will handle this use case, for example.
+
+        **Disconnections**
+
+        The reader will close a streaming connection for the following reasons:
+         - A client establishes too many connections with the same credentials. When this occurs, the oldest connection will be terminated.
+         - A client stops reading data suddenly. If the rate of tag reports being read off of the stream drops suddenly, the connection will be closed.
+         - A client reads data too slowly. Every streaming connection is backed by a queue of messages to be sent to the client. If this queue grows too large over time, the connection will be closed.
+         - The reader is rebooted.
+
+         **Stalls**
+
+         Set a timer, either a 90 second TCP level socket timeout, or a 90 second application level timer on the receipt
+         of new data. If 90 seconds pass with no data received, including newlines, disconnect and reconnect immediately.
+         The Streaming API will send a keep-alive periodically to prevent your application from timing out the
+         connection. You should wait at least 3 cycles to prevent spurious reconnects in the event of network congestion,
+         local CPU starvation, local GC pauses, etc.
+      responses:
+        "200":
+          description: OK. HTTP stream of events will be sent.
+          schema:
+            $ref: '#/definitions/ReaderEvent'
+        "404":
+          description: Streaming output has not been enabled on this reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: An internal error occurred.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /status:
+    get:
+      summary: Retrieve status
+      description: |
+        Retrieves the reader's current status.
+        This endpoint allow's a user to query what the reader is actively working on, if anything. The information
+        contained here will indicate the last request the reader responded to that resulted in it taking some modem
+        action, such as starting or stopping inventory. Configuration API calls are not included.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/ReaderStatus'
+  /http-stream:
+    get:
+      summary: Retrieve HTTP stream settings
+      description: Retrieves the configuration settings that apply to all HTTP streams.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/StreamConfiguration'
+    put:
+      summary: Update HTTP stream settings
+      description: Updates the HTTP stream settings that apply to all HTTP streams.
+      parameters:
+        - in: body
+          name: updatedStreamConfiguration
+          description: The HTTP stream configuration settings
+          required: true
+          schema:
+            $ref: '#/definitions/StreamConfiguration'
+      responses:
+        "204":
+          description: No Content. The HTTP stream settings were updated successfully.
+        "400":
+          description: Bad request. The request body contained a request the server could not understand.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /mqtt:
+    get:
+      summary: Retrieve MQTT settings
+      description: Retrieves the current MQTT configuration settings for publishing data to an MQTT broker.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/MqttConfiguration'
+    put:
+      summary: Update MQTT settings
+      description: Updates the MQTT settings used by the device.
+      parameters:
+        - in: body
+          name: updatedMqttConfiguration
+          description: The fully defined MQTT configuration settings the device should use when publishing data to an MQTT broker.
+          required: true
+          schema:
+            $ref: '#/definitions/MqttConfiguration'
+      responses:
+        "204":
+          description: No Content. The MQTT settings were updated successfully.
+        "400":
+          description: Bad request. The request body contained an MQTT configuration object the server could not understand.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /kafka:
+    get:
+      summary: Retrieve Kafka settings
+      description: Retrieves the current Kafka configuration settings for pushing messages to a Kafka broker.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/KafkaConfiguration'
+    put:
+      summary: Update Kafka settings
+      description: Updates the Kafka settings used by the device.
+      parameters:
+        - in: body
+          name: updatedKafkaConfiguration
+          description: The fully defined Kafka configuration settings the device should use when pushing messages to a Kafka broker.
+          required: true
+          schema:
+            $ref: '#/definitions/KafkaConfiguration'
+      responses:
+        "204":
+          description: No Content. The Kafka settings were updated successfully.
+        "400":
+          description: Bad request. The request body contained a Kafka configuration object the server could not understand.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /profiles:
+    get:
+      summary: Retrieve profiles
+      description: Retrieves the profiles (e.g. inventory, location, and direction) supported by this reader.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: array
+            items:
+              type: string
+            minItems: 1
+            maxItems: 25
+        "500":
+          description: An internal error occurred.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /profiles/stop:
+    post:
+      summary: Stop preset
+      description: |
+        Stops the currently running profile preset.
+        If no preset is currently running, this is a no-op.
+      responses:
+        "204":
+          description: No Content.
+  /profiles/inventory/presets-schema:
+    get:
+      deprecated: true
+      summary: Retrieve inventory schema
+      description: |
+        Deprecated: This path will be removed in a future release. The device-specific schema and
+        capabilities can be observed via the "/openapi.json" API path instead.
+
+        Retrieves the reader-specific JSON schema used to validate inventory presets.
+        This is a good way to determine reader capabilities such as max transmit power or available RF modes.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/PresetsSchema'
+  /profiles/inventory/presets:
+    get:
+      summary: Retrieve inventory presets
+      description: Retrieves the available presets for running inventory.
+      responses:
+        "200":
+          $ref: '#/responses/PresetList'
+  /profiles/inventory/presets/{presetId}:
+    get:
+      summary: Retrieve inventory preset detail
+      description: Retrieves the detailed configuration of the specified preset.
+      parameters:
+        - $ref: '#/parameters/PresetId'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/InventoryRequest'
+        "404":
+          $ref: '#/responses/PresetNotFound'
+    put:
+      summary: Create or replace inventory preset
+      description: |
+        Creates or replaces a user-defined inventory preset.  Presets with names
+        that begin with 'default' or 'impinj' may not be created or replaced.
+      parameters:
+        - $ref: '#/parameters/PutPresetId'
+        - $ref: '#/parameters/InventoryRequestParameter'
+      responses:
+        "201":
+          $ref: '#/responses/PresetCreated'
+        "204":
+          $ref: '#/responses/PresetReplaced'
+        "400":
+          $ref: '#/responses/ProfileConfigBadRequest'
+        "403":
+          $ref: '#/responses/PresetIdForbidden'
+        "409":
+          $ref: '#/responses/PresetConflict'
+    delete:
+      summary: Delete inventory preset
+      description: Removes a user-defined settings preset for executing inventory.
+      parameters:
+        - $ref: '#/parameters/PresetId'
+      responses:
+        "204":
+          $ref: '#/responses/PresetDeleted'
+        "403":
+          $ref: '#/responses/PresetDeleteForbidden'
+        "404":
+          $ref: '#/responses/PresetNotFound'
+        "409":
+          $ref: '#/responses/PresetConflict'
+  /profiles/inventory/presets/{presetId}/start:
+    post:
+      summary: Start inventory preset
+      description: |
+        Starts running the specified inventory preset. The running preset cannot be
+        replaced or deleted. The preset will be automatically restarted if the reader
+        reboots. If the reader is restarted multiple times in quick succcession the
+        saved preset may be stopped to prevent the bad preset from blocking access to
+        the rest interface. If this occurs an ERROR level message will be logged.
+      parameters:
+        - $ref: '#/parameters/PresetId'
+      responses:
+        "204":
+          $ref: '#/responses/ProfileStarted'
+        "400":
+          $ref: '#/responses/SavedPresetBadRequest'
+        "404":
+          $ref: '#/responses/PresetNotFound'
+        "409":
+          $ref: '#/responses/ProfileCannotStart'
+  /profiles/inventory/start:
+    post:
+      summary: Start transient inventory preset
+      description: |
+        Start running inventory using the provided inventory configuration. The
+        configuration is not saved and not restarted if the reader reboots.
+
+        Transient presets are recommended for running configuration that is
+        updated frequently or for which there is no benefit to storing the
+        configuration on the reader after the preset has stopped. Transient
+        presets are usually the best choice when performing operations that
+        modify tag memory or are meant to operate on a specific tag.
+      parameters:
+        - $ref: '#/parameters/InventoryRequestParameter'
+      responses:
+        "204":
+          $ref: '#/responses/ProfileStarted'
+        "400":
+          $ref: '#/responses/ProfileConfigBadRequest'
+        "409":
+          $ref: '#/responses/ProfileCannotStart'
+  /profiles/inventory/tag:
+    get:
+      summary: Checks for the presence of a tag in the field of view of an antenna.
+      description: |
+        Returns information on whether the specified tag was seen on the specified antenna in the
+        tag reporting interval. Available only if TagReportingConfiguration feature is enabled.
+        Must specify exactly one tag identifier and one antenna identifier.
+      parameters:
+        - in: query
+          name: epc
+          type: string
+          format: Base64Url-Encoding
+          description: The base64url-encoded EPC of the tag of interest.
+        - in: query
+          name: epcHex
+          type: string
+          pattern: ^[0-9A-F]+$
+          description: The hex-encoded EPC of the tag of interest.
+        - in: query
+          name: tid
+          type: string
+          format: Base64Url-Encoding
+          description: The base64url-encoded TID of the tag of interest.
+        - in: query
+          name: tidHex
+          type: string
+          pattern: ^[0-9A-F]+$
+          description: The hex-encoded TID of the tag of interest.
+        - in: query
+          name: antennaPort
+          type: integer
+          minimum: 1
+          description: The port number of the antenna for the tag of interest.
+        - in: query
+          name: antennaName
+          type: string
+          pattern: ^[a-zA-Z0-9_.-]+$
+          maxLength: 64
+          description: Name for the antenna for the tag of interest.
+      responses:
+        "200":
+          description: Tag presence information.
+          schema:
+            $ref: '#/definitions/TagPresenceResponse'
+        "400":
+          description: |
+            Bad Request. Malformed request, does not contain exactly one tag identifier and one
+            antenna identifier.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: |
+            Not found. Tag presence information not available. Either the tag reporting feature is not
+            enabled or the tag and antenna identifiers used do not match the reporting configuration.
+  /webhooks/event:
+    get:
+      summary: Get the event webhook configuration.
+      description: Gets the event webhook configuration.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/EventWebhookConfiguration'
+    put:
+      summary: Set the event webhook configuration.
+      description: Sets the event webhook configuration.
+      parameters:
+        - in: body
+          name: eventWebhookConfiguration
+          required: true
+          schema:
+            $ref: '#/definitions/EventWebhookConfiguration'
+      responses:
+        "204":
+          description: No Content. Configuration saved successfully.
+        "400":
+          description: Bad request. Configuration is invalid.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /device/gpos:
+    get:
+      summary: Retrieve GPO configurations.
+      description: |
+        Retrieves the GPO configurations of the reader.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/GpoConfigurations'
+    put:
+      summary: Update GPO configurations.
+      description: |
+        Updates the GPO configurations of the reader.
+        If no configuration is provided for a GPO then the existing configuration will be used.
+      parameters:
+        - in: body
+          name: gpoConfigurations
+          required: true
+          schema:
+            $ref: '#/definitions/GpoConfigurations'
+      responses:
+        "204":
+          description: No Content.
+        "400":
+          description: Bad request. Invalid GPO configurations.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system:
+    get:
+      summary: Retrieve details about the reader hardware.
+      description: Retrieve details about the reader hardware.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SystemInfo'
+  /system/access/authentication:
+    get:
+      summary: Retrieve the reader's authentication configuration.
+      description: Retrieves the reader's authentication configuration.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/AuthenticationConfig'
+    put:
+      summary: Update the reader's authentication configuration.
+      description: Updates the reader's authentication configuration.
+      parameters:
+        - in: body
+          name: authConfig
+          description: The authentication configuration to update.
+          required: true
+          schema:
+            $ref: '#/definitions/AuthenticationConfig'
+      responses:
+        "204":
+          description: No Content. The authentication configuration has been updated successfully.
+        "400":
+          description: Bad Request. The request body contained an invalid configuration.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/access/users:
+    get:
+      summary: Retrieve the list of users.
+      description: |
+        Retrieves the list of users that can access reader.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/UserInfo'
+            maxItems: 5
+  /system/access/users/{userId}/password:
+    put:
+      summary: Update the password for the specified user.
+      description: Updates the password for the specified user.
+      parameters:
+        - $ref: '#/parameters/UserId'
+        - in: body
+          name: passwordInfo
+          required: true
+          schema:
+            $ref: '#/definitions/PasswordInfo'
+      responses:
+        "204":
+          description: No Content. The password was updated successfully.
+        "400":
+          description: Bad Request. An invalid request was received.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not found. Could not find a user with the specified userId.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/antenna-hub:
+    get:
+      summary: Retrieve antenna-hub information.
+      description: Retrieve the current antenna-hub status, including a list of connected hubs.
+      parameters:
+        - in: query
+          name: pending
+          type: boolean
+          description: |
+            If set to true, the response will reflect the future antenna-hub state after the next reboot.
+            This will differ from the current state when a request to enable or disable the antenna-hub
+            feature has been made.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/AntennaHubInfo'
+        "404":
+          description: |
+            Not found. This feature is unavailable on this reader model.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/antenna-hub/enable:
+    post:
+      summary: Enable the antenna-hub feature.
+      description: |
+        Enable the antenna-hub feature.
+        System reboot is required for the new configuration to take effect.
+      responses:
+        "202":
+          description: Accepted. System reboot is required for the new configuration to take effect.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "204":
+          description: No Content. The antenna-hub is already in this configuration.
+        "404":
+          description: |
+            Not found. This feature is unavailable on this reader model.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/antenna-hub/disable:
+    post:
+      summary: Disable the antenna-hub feature.
+      description: |
+        Disable the antenna-hub feature.
+        System reboot is required for the new configuration to take effect.
+      responses:
+        "202":
+          description: Accepted. System reboot is required for the new configuration to take effect.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "204":
+          description: No Content. The antenna-hub is already in this configuration.
+        "404":
+          description: |
+            Not found. This feature is unavailable on this reader model.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/certificates/ca/certs:
+    get:
+      summary: Retrieve CA certificates.
+      description: |
+        Retrieves user-installed CA certificates on the reader which includes Root and
+        intermediate CA certificates.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/CertificateInfo'
+            maxItems: 64
+    post:
+      consumes:
+        - multipart/form-data
+      summary: Install CA certificates.
+      description: |
+        Installs CA certificates on the reader. Only PEM format is supported.
+        It is possible to install a certificate bundle which contains multiple certificates.
+        The certificates will be automatically validated prior to installing on the reader.
+
+        The certificate ID assigned to each certificate will be returned in the response
+        upon successful installation.
+      parameters:
+        - in: formData
+          name: certFile
+          type: file
+          description: The certificate file to be installed on the reader.
+          required: true
+      responses:
+        "200":
+          description: Ok. The certificates were successfully installed on the reader.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/CertificateId'
+        "400":
+          description: |
+            Bad Request. An invalid or malformed certificate was detected. This error response
+            is also returned when the number of certificates installed has reached the maximum
+            limit.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "413":
+          description: Payload Too Large. The reader rejected the file because its filesize is too large.
+  /system/certificates/ca/certs/{certId}:
+    get:
+      summary: Retrieve CA certificate.
+      description: |
+        Retrieves certficate information for the specified CA certificate.
+      parameters:
+        - $ref: '#/parameters/CertificateId'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/CertificateInfo'
+        "404":
+          description: Not found. The specified certificate ID could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    delete:
+      summary: Remove CA certificate.
+      description: Removes the specified CA certificate from the reader.
+      parameters:
+        - $ref: '#/parameters/CertificateId'
+      responses:
+        "204":
+          description: |
+            No Content. The specified certficate was successfully removed from the reader.
+        "404":
+          description: Not found. The specified certificate ID could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/certificates/cap/certs:
+    get:
+      summary: Retrieve CAP authentication certificates.
+      description: |
+        Retrieves all installed CAP authentication certificates on the reader.
+        This may include the default certificate, if it has not been removed.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/CertificateInfo'
+            maxItems: 64
+    post:
+      consumes:
+        - multipart/form-data
+      summary: Install CAP authentication certificates.
+      description: |
+        Installs a single CAP authentication certificate on the reader. Only PEM format is supported.
+        The certificate will be validated prior to installing on the reader.
+
+        On success, an array containing a single certificate ID will be returned in the response.
+      parameters:
+        - in: formData
+          name: certFile
+          type: file
+          description: The CAP authentication certificate file to be installed on the reader.
+          required: true
+      responses:
+        "200":
+          description: Ok. The certificate was successfully installed on the reader.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/CertificateId'
+        "400":
+          description: |
+            Bad Request. An invalid or malformed certificate was detected. This error response
+            is also returned when the number of certificates installed has reached the maximum
+            limit.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "413":
+          description: Payload Too Large. The reader rejected the file because its filesize is too large.
+  /system/certificates/cap/certs/{certId}:
+    get:
+      summary: Retrieve a CAP authentication certificate.
+      description: |
+        Retrieves certificate information for the specified CAP authentication certificate.
+      parameters:
+        - $ref: '#/parameters/CertificateId'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/CertificateInfo'
+        "404":
+          description: Not found. The specified certificate ID could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    delete:
+      summary: Remove CAP authentication certificate.
+      description: Removes the specified CAP authentication certificate from the reader.
+      parameters:
+        - $ref: '#/parameters/CertificateId'
+      responses:
+        "204":
+          description: |
+            No Content. The specified certificate was successfully removed from the reader.
+        "404":
+          description: Not found. The specified certificate ID could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/certificates/tls/certs:
+    get:
+      summary: Retrieve TLS certificates.
+      description: |
+        Retrieves user-installed TLS certificates on the reader which includes server and client certificates.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/CertificateInfo'
+            maxItems: 64
+    post:
+      consumes:
+        - multipart/form-data
+      summary: Install TLS certificate.
+      description: |
+        Installs TLS certificate on the reader using either pkcs12 or PEM format.
+
+        When installing a certificate using pkcs12 format, the password used to encrypt the
+        bundle must be included in the request.
+
+        The certificate ID will be returned in the response upon successful installation.
+      parameters:
+        - in: formData
+          name: certFile
+          type: file
+          description: The certificate file to be installed on the reader.
+          required: true
+        - in: formData
+          name: password
+          description: The password that was used to create the pkcs12 bundle.
+          type: string
+          required: false
+      responses:
+        "200":
+          description: Ok. The certificate was successfully installed on the reader.
+          schema:
+            $ref: '#/definitions/CertificateId'
+        "400":
+          description: |
+            Bad Request. An invalid or malformed certificate was detected. This error response
+            is also returned when the number of certificates installed has reached the maximum
+            limit.
+            For pkcs12 format, a wrong password or invalid private key would also result in
+            this error response.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "413":
+          description: Payload Too Large. The reader rejected the file because its file size is too large.
+  /system/certificates/tls/certs/{certId}:
+    get:
+      summary: Retrieve TLS certficate.
+      description: |
+        Retrieves TLS certficate information for the specified certificate.
+      parameters:
+        - $ref: '#/parameters/CertificateId'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/CertificateInfo'
+        "404":
+          description: Not found. The specified certificate ID could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    delete:
+      summary: Remove TLS certificate.
+      description: |
+        Removes the specified certificate from the reader. The private key
+        associated with the certificate will be automatically removed as well.
+      parameters:
+        - $ref: '#/parameters/CertificateId'
+      responses:
+        "204":
+          description: |
+            No Content. The specified certificate was successfully removed from the reader.
+        "404":
+          description: Not found. The specified certificate ID could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/certificates/tls/csr:
+    post:
+      summary: Create a certificate signing request(CSR).
+      description: |
+        Create a CSR file that could be sent to a Certificate Authority(CA) for certificate issuance.
+      parameters:
+        - in: body
+          name: csrConfiguration
+          description: The configuration settings to be included in the CSR.
+          required: true
+          schema:
+            $ref: '#/definitions/CsrConfiguration'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: file
+          headers:
+            Content-Disposition:
+              type: string
+              default: attachment
+        "400":
+          description: Bad Request. The request body contained an invalid configuration setting.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/certificates/tls/services/{tlsService}:
+    get:
+      summary: Retrieve certificate info for the specified service.
+      description: |
+        Retrieves the certificate info for the specified service. If the specified
+        service has not been configured to use a user-installed certificate, a 204
+        response will be returned.
+      parameters:
+        - $ref: '#/parameters/TlsService'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/CertificateInfo'
+        "204":
+          description: No Content. No certificate info is found for the specified service.
+        "404":
+          description: Not found. The specified service could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    put:
+      summary: Update certificate info for the specified service.
+      description: |
+        Updates certificate info for the specified service to use one of the available
+        certificates installed on the reader.
+
+        The extended key usage on the certificate must match the intended usage of the service.
+
+        For example:
+        If the extended key usage on the certificate only have `server authentication` bit set,
+        then the certificate can not be used for 'client authentication' (e.g `mqtt-client`).
+
+        If the extended key usage on the certificate have both `server authentication` and
+        'client authentication' bits set, then the certificate could be used for both `https-server`
+        and `mqtt-client`.
+
+        If the extended key usage on the certificate is not specified, then the certificate could
+        be used for any purpose that the reader supports.
+      parameters:
+        - $ref: '#/parameters/TlsService'
+        - in: body
+          name: certConfig
+          required: true
+          schema:
+            $ref: '#/definitions/CertificateConfig'
+      responses:
+        "204":
+          description: No Content. The certificate info has been successfully updated for the specified service.
+        "400":
+          description: Bad Request. The request body contained an invalid configuration value.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not found. The specified service could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/cap/installation:
+    get:
+      summary: Retrieve the current installation configuration settings.
+      description: Retrieve the current Customer Application (CAP) installation configuration settings.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/CapInstallationConfiguration'
+    put:
+      summary: Update CAP installation configuration settings.
+      description: Updates CAP installation configuration settings.
+      parameters:
+        - in: body
+          name: installationConfiguration
+          description: The new CAP installation configuration settings.
+          required: true
+          schema:
+            $ref: '#/definitions/CapInstallationConfiguration'
+      responses:
+        "204":
+          description: No Content. The settings were updated successfully.
+        "400":
+          description: Bad Request. The request body was not understood by the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/diagnostics/debug-bundle:
+    get:
+      summary: Generate and retrieve a diagnostic bundle.
+      description: |
+        Generates and retrieves a diagnostic bundle containing current diagnostic information.
+
+        The bundle contains
+        - An index.html file containing information about the bundle, including the time it was
+          generated and the directory structure.
+        - The syslog logs
+        - The journal logs
+        - Core files
+        - The RDD buffer
+        - OS release information
+        - A startup graph
+        - Other reader configuration information
+        This bundle is not stored on the reader.
+      produces:
+        - application/gzip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+          headers:
+            Content-Disposition:
+              type: string
+              format: binary
+              default: attachment
+  /system/diagnostics/watchdog-bundle:
+    get:
+      summary: Retrieve diagnostic bundle generated by a watchdog reboot.
+      description: |
+        Retrieves an existing diagnostic bundle generated before the most recent watchdog reboot, if one exists.
+        When a watchdog reboot occurs, a bundle is generated from the logs and other reader state
+        information before the reboot. At most one such bundle can be stored on the reader at a time.
+        If another watchdog reboot occurs when there is already a bundle stored on the reader,
+        the oldest will be overwritten.
+        The information contained in this bundle is a snapshot of the reader state immediately
+        before the most recent watchdog reboot.
+
+        The bundle contains
+        - An index.html file containing information about the bundle, including the time it was
+          generated and its directory structure.
+        - The syslog logs
+        - The journal logs
+        - Core files
+        - The RDD buffer
+        - OS release information
+        - A startup graph
+        - Other reader configuration and state information
+      produces:
+        - application/gzip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+          headers:
+            Content-Disposition:
+              type: string
+              format: binary
+              default: attachment
+        "204":
+          description: No Content. No bundle generated by a watchdog reboot found on reader.
+    delete:
+      summary: Delete core files and diagnostic bundle generated by a watchdog reboot.
+      description: |
+        Deletes all core files on the reader and the diagnostic bundle generated by a watchdog reboot, if one exists.
+      responses:
+        "204":
+          description: Successfully deleted core files and diagnostic bundle.
+  /system/hostname:
+    get:
+      summary: Retrieve the reader hostname.
+      description: |
+        Retrieves the current hostname of the reader. Note that this is not a fully qualified domain name.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/Hostname'
+    put:
+      summary: Update the reader hostname.
+      description: Updates the reader hostname to the specified value.
+      parameters:
+        - in: body
+          name: hostname
+          description: |
+            The new hostname to be set for the reader. The hostname must conform with RFC-952 and RFC-1123.
+          required: true
+          schema:
+            $ref: '#/definitions/Hostname'
+      responses:
+        "204":
+          description: No Content. The reader's hostname was successfully updated.
+        "400":
+          description: Bad Request. The request body contained an invalid hostname.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/http:
+    get:
+      summary: Retrieve the current HTTP server configuration settings.
+      description: Retrieves the current HTTP server configuration settings.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/HttpConfiguration'
+    put:
+      summary: Update HTTP server configuration settings.
+      description: Updates HTTP server configuration settings.
+      parameters:
+        - in: body
+          name: httpConfiguration
+          description: The new HTTP configuration settings.
+          required: true
+          schema:
+            $ref: '#/definitions/HttpConfiguration'
+      responses:
+        "204":
+          description: No Content. The settings were updated successfully.
+        "400":
+          description: Bad Request. The request body was not understood by the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/https:
+    get:
+      summary: Retrieve the current HTTPS server configuration settings.
+      description: Retrieves the current HTTPS server configuration settings.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/HttpsConfiguration'
+    put:
+      summary: Update HTTPS server configuration settings.
+      description: Updates HTTPS server configuration settings.
+      parameters:
+        - in: body
+          name: httpsConfiguration
+          description: The new HTTPS configuration settings.
+          required: true
+          schema:
+            $ref: '#/definitions/HttpsConfiguration'
+      responses:
+        "204":
+          description: No Content. The settings were updated successfully.
+        "400":
+          description: Bad Request. The request body was not understood by the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/image:
+    get:
+      summary: Retrieve details about the reader's firmware.
+      description: |
+        A successful `GET` request to this endpoint will return detailed information about the
+        firmware installed on the reader. Properties are omitted for uninstalled or unavailable
+        partitions.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SystemImage'
+  /system/image/upgrade:
+    post:
+      consumes:
+        - multipart/form-data
+      summary: Upload an upgrade file for installation.
+      description: |
+        In order to perform an upgrade, the upgrade file must be uploaded to the reader using this
+        endpoint. Upon successfully uploading an upgrade file to the reader, the reader will
+        acknowledge receipt of the upgrade file by issuing a `202: Accepted` response.
+
+        Following such a response, the client can visit the status URL for the current state of
+        the upgrade operation.
+
+        Once an upgrade file has completed transfer with this endpoint, subsequent requests will
+        receive a response of `409: Conflict` until one of the following conditions is met:
+
+        - The upgrade was successfully installed, and the reader is awaiting reboot.
+        - The upgrade failed to install.
+
+        If an upgrade has been installed, but the reader has not yet been rebooted, a different
+        upgrade file can be installed over the previous upgrade.
+
+        Any successfully installed upgrade will take effect the next time the reader is booted.
+      parameters:
+        - in: formData
+          name: upgradeFile
+          type: file
+          description: The upgrade file to be installed on the reader.
+          required: true
+      responses:
+        "202":
+          description: Accepted. The image file was uploaded successfully and is being installed on the reader.
+        "409":
+          description: Conflict. Another upgrade operation is currently running on the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "413":
+          description: Payload Too Large. The reader rejected the file because its filesize is too large.
+        "415":
+          description: |
+            Unsupported Media Type. Data provided was not in multipart/form-data format and could not be parsed.
+    get:
+      summary: Get details about the state of a firmware upgrade.
+      description: |
+        The state of any upgrades occurring on the reader can be monitored from this endpoint.
+
+        Note that once an upgrade has reached the `successful` state, it will take effect the next
+        time the reader is booted. The user must trigger the reboot as the reader won't reboot on
+        its own.
+      responses:
+        "200":
+          description: OK. Information about the state of any firmware upgrades will be in the provided upgrade status object.
+          schema:
+            $ref: '#/definitions/UpgradeStatus'
+  /system/mdns:
+    get:
+      summary: Retrieve the current mDNS configuration settings.
+      description: Retrieve the current mDNS configuration settings.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MdnsConfiguration'
+    put:
+      summary: Update mDNS configuration settings.
+      description: Updates mDNS configuration settings.
+      parameters:
+        - in: body
+          name: mdnsConfiguration
+          description: The new mDNS configuration settings.
+          required: true
+          schema:
+            $ref: '#/definitions/MdnsConfiguration'
+      responses:
+        "202":
+          description: Accepted. System reboot is required for the new configuration to take effect.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "204":
+          description: No Content. The settings were updated successfully.
+        "400":
+          description: Bad Request. The request body was not understood by the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/network/dns/domains:
+    get:
+      summary: Retrieve the search domains.
+      description: |
+        Retrieves both static and dynamic search domains that are being used by the DNS resolver on the reader.
+        Dynamic search domains are configured automatically via a DHCP server and static search domains are
+        those configured manually.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/SearchDomains'
+    put:
+      summary: Update static search domains used by the reader.
+      description: |
+        Updates the static search domains used by the reader.
+        Up to 12 static search domains are allowed. It is possible to convert the dynamic
+        search domains to static search domains by including them on the list to update.
+        An empty list of search domains would indicate that no static search domains should
+        be used and all previously configured search domains should be removed from the
+        reader.
+      parameters:
+        - in: body
+          name: searchDomains
+          description: A list of static search domains to update.
+          required: true
+          schema:
+            $ref: '#/definitions/SearchDomains'
+      responses:
+        "204":
+          description: No Content. The search domains were updated successfully.
+        "400":
+          description: Bad Request. The request body was not understood by the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/network/dns/servers:
+    get:
+      summary: Retrieve the DNS servers from the reader.
+      description: |
+        Retrieves both static and dynamic DNS servers that are being used by the DNS resolver on the reader.
+        Dynamic DNS servers are obtained automatically via a DHCP server and static DNS servers are those
+        configured manually by users.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/DnsServers'
+    put:
+      summary: Update the static DNS servers used by the reader.
+      description: |
+        Updates the static DNS servers used by the reader.
+        Up to 12 static DNS servers are allowed. It is possible to convert dynamic
+        DNS servers to static DNS servers by including them on the list to update.
+        An empty list of DNS servers would indicate that no static DNS server should
+        be used and all previously configured DNS servers should be removed from the
+        reader.
+      parameters:
+        - in: body
+          name: dnsServers
+          description: A list of static DNS servers to update.
+          required: true
+          schema:
+            $ref: '#/definitions/DnsServers'
+      responses:
+        "204":
+          description: No Content. The static DNS servers were updated successfully.
+        "400":
+          description: Bad Request. The request body was not understood by the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/network/interfaces:
+    get:
+      summary: Retrieve the current network information for all interfaces.
+      description: |
+        Retrieves the available network interfaces and their current network information.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/NetworkInterface'
+            maxItems: 5
+  /system/network/interfaces/{interfaceId}:
+    get:
+      summary: Retrieve the specified network interface state.
+      description: |
+        Retrieves the specified network interface state.
+      parameters:
+        - $ref: '#/parameters/InterfaceId'
+        - in: query
+          name: pending
+          type: boolean
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/NetworkInterface'
+        "204":
+          description: No Content. No pending status was available.
+        "400":
+          description: Bad Request. Invalid query parameter or value.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not found. The specified network interface could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    put:
+      summary: Enable the specified network interface.
+      description: |
+        Enable the specified network interface. There can be only one enabled and active interface at a time.
+        A reboot is required for the change to take effect. Until the reader is rebooted, the previous enabled
+        interface will stay active.
+        Enabling one interface will automatically disable the other interface after the reader reboot.
+      parameters:
+        - $ref: '#/parameters/InterfaceId'
+        - in: body
+          name: networkInterfaceState
+          required: true
+          schema:
+            $ref: '#/definitions/NetworkInterfaceState'
+      responses:
+        "200":
+          description: OK. A system reboot is required for the new configurations to take effect.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "400":
+          description: Bad Request. The request body contained invalid network interface settings.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "403":
+          description: |
+            Forbidden. The request is not valid for the specified interface. A WLAN connection is required to be established
+            before enabling its network interface.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not found. The specified network interface could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/network/interfaces/{interfaceId}/{networkProtocol}/configuration:
+    get:
+      summary: Retrieve the current configuration of a network interface.
+      description: |
+        Retrieves the current IPv4 or IPv6 configuration of the specified interface.
+        The `networkProtocol` parameter indicates a specific Network Protocol version of the
+        configuration to retrieve.
+      parameters:
+        - $ref: '#/parameters/InterfaceId'
+        - $ref: '#/parameters/NetworkProtocol'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/IpConfiguration'
+        "404":
+          description: Not found. The specified network interface or protocol could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    put:
+      summary: Update the IP configuration of a network interface.
+      description: |
+        Updates IPv4 or IPv6 configuration for the specified interface. This endpoint
+        could be used to change the addressing mode between dynamic and static as well as
+        setting the static IP address, prefix length, and gateway.
+      parameters:
+        - $ref: '#/parameters/InterfaceId'
+        - $ref: '#/parameters/NetworkProtocol'
+        - in: body
+          name: ipConfiguration
+          required: true
+          schema:
+            $ref: '#/definitions/IpConfiguration'
+      responses:
+        "202":
+          description: |
+            Accepted. The IP configuration for the interface was updated successfully.
+            System reboot is required for the new configuration to take effect.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "404":
+          description: Not found. The specified network interface or protocol could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "400":
+          description: |
+            Bad Request. The request body contained a request the server could not understand.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/network/interfaces/{interfaceId}/wlan/access-points:
+    get:
+      summary: Retrieve a list of the available access points using the specified network interface.
+      description: |
+        Scan for access points using the specified network interface and return a list of available access points
+        along with related information.
+      parameters:
+        - $ref: '#/parameters/InterfaceId'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/NetworkWlanAccessPoint'
+            maxItems: 10
+        "404":
+          description: |
+            Not found. The specified network interface could not be found, or the specified interface
+            does not support this operation.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/network/interfaces/{interfaceId}/wlan/connection:
+    get:
+      summary: Retrieve the current WLAN connection status.
+      description: |
+        Retrieves the current WLAN connection status.
+      parameters:
+        - $ref: '#/parameters/InterfaceId'
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/NetworkWlanConnectionStatus'
+        "404":
+          description: |
+            Not found. The specified network interface could not be found, or the specified interface
+            doesn't support such an operation.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    put:
+      summary: Request a connection to the specified access point.
+      description: |
+        Request a network connection to the specified access point using the specified SSID and a password.
+      parameters:
+        - $ref: '#/parameters/InterfaceId'
+        - in: body
+          name: networkWlanConnection
+          required: true
+          schema:
+            $ref: '#/definitions/NetworkWlanConnection'
+      responses:
+        "202":
+          description: Accepted. Connection request has begun.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "400":
+          description: |
+            Bad Request. The access point credentials are incorrect, or the request body contained an
+            invalid configuration.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: |
+            Not found. The specified network interface could not be found, or the specified interface
+            doesn't support such an operation.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/power:
+    get:
+      summary: Retrieve the current power configuration.
+      description: Retrieves the current power configuration on the reader.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/PowerConfiguration'
+    put:
+      summary: Configure the power source.
+      description: Configures the power source to the specified value for the reader.
+      parameters:
+        - in: body
+          name: powerSource
+          description: The power source to be configured for the reader.
+          required: true
+          schema:
+            type: object
+            properties:
+              powerSource:
+                $ref: '#/definitions/PowerSource'
+            required:
+              - powerSource
+      responses:
+        "202":
+          description: Accepted. System reboot is required for the new configuration to take effect.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "204":
+          description: No Content. The provided power source was already configured on the reader.
+        "400":
+          description: Bad Request. The request body contained invalid power configuration settings.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/region:
+    get:
+      summary: Retrieve region information.
+      description: |
+        Retrieves the current operating region and a list of selectable regions for the reader.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/RegionInfo'
+    put:
+      summary: Configure the operating region.
+      description: |
+        Configures the reader operating region to the specified region. This operation changes the reader
+        RF settings. The operating region must match the country/region of operation to comply with local laws
+        and regulations.
+      parameters:
+        - in: body
+          name: operatingRegion
+          description: The operating region to be configured for the reader.
+          required: true
+          schema:
+            type: object
+            properties:
+              operatingRegion:
+                $ref: '#/definitions/OperatingRegion'
+            required:
+              - operatingRegion
+      responses:
+        "202":
+          description: Accepted. System reboot is required for the new configuration to take effect.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+        "204":
+          description: No Content. The provided region was already configured on the reader.
+        "400":
+          description: |
+            Bad Request. The request body contained an invalid operating region or format
+            that does not match the expected schema.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/reboot:
+    post:
+      summary: Reboot the system.
+      description: |
+        A call to this endpoint will cause the system to reboot. Once this request is issued, subsequent calls to
+        any endpoint will fail until the system is again available to service requests.
+
+        If an upgrade has been installed on the system, the reader will boot into the newly installed firmware image.
+      responses:
+        "202":
+          description: Accepted. The system has begun the shutdown and startup process.
+          schema:
+            $ref: '#/definitions/StatusResponse'
+  /system/rfid/llrp:
+    get:
+      summary: Retrieve LLRP status.
+      description: Retrieves the current status of the LLRP interface.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/LlrpStatus'
+        "404":
+          description: Not Found. This endpoint is only available when RFID interface is set to LLRP.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/rfid/interface:
+    get:
+      summary: Retrieve the reader API.
+      description: |
+        Retrieves the application programming interface (API) that is currently being used
+        to control the reader RFID operations.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/RfidInterface'
+    put:
+      summary: Configure the reader API.
+      description: |
+        Configures the application programming interface (API) that will be used to control the
+        reader RFID operations.
+      parameters:
+        - in: body
+          name: rfidInterface
+          description: The API that will be used to control the reader RFID operations.
+          required: true
+          schema:
+            $ref: '#/definitions/RfidInterface'
+      responses:
+        "204":
+          description: No Content. The provided interface was successfully enabled on the reader.
+        "400":
+          description: Bad Request. The request body contained an invalid interface.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/time:
+    get:
+      summary: Retrieve information about system time and uptime.
+      description: |
+        Retrieves information about system time and uptime.
+        System time is in UTC and RFC-3339 compliant format.
+        Uptime indicates how long the system has been running in seconds.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/TimeInfo'
+    put:
+      summary: Update the system time.
+      description: |
+        Updates the system time if NTP is disabled. If NTP is enabled,
+        an error is returned.
+      parameters:
+        - in: body
+          name: systemTime
+          description: The new system time to be set in UTC and RFC-3339 format.
+          required: true
+          schema:
+            type: object
+            properties:
+              systemTime:
+                type: string
+                format: date-time
+                minLength: 19
+                maxLength: 32
+                pattern: ^([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2}[Zz]?)$
+                example: "2020-11-20T10:20:30Z"
+            required:
+              - systemTime
+      responses:
+        "204":
+          description: No Content. The provided system time was successfully updated on the reader.
+        "400":
+          description: Bad Request. The request body contained a system time that the server could not understand.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "409":
+          description: Conflict. Manual setting of system time is not available while NTP is enabled.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/time/ntp:
+    get:
+      summary: Retrieve the current state of the NTP service.
+      description: |
+        Retrieves the current state of the NTP (Network Time Protocol) service on the reader.
+        NTP service is responsible for synchronizing the system time on the reader with external
+        NTP servers in order to keep the system time accurate and synchronized with other devices
+        on the network.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            type: object
+            properties:
+              status:
+                description: |
+                  The state of NTP service on the reader.
+                  Disabled - the NTP service is disabled.
+                  Synchronized - the system time is synchronized with at least one external NTP server.
+                  Unsynchronized - the NTP service is enabled, but the system time is not being synchronized
+                  with any NTP server. It could be that there is no NTP server available or the service
+                  is having an issue communicating with the NTP servers due to network issues.
+                type: string
+                enum:
+                  - disabled
+                  - synchronized
+                  - unsynchronized
+    put:
+      summary: Configure the NTP service.
+      description: Configures the NTP service on the reader.
+      parameters:
+        - in: body
+          name: ntpConfiguration
+          description: The new NTP service configuration.
+          required: true
+          schema:
+            $ref: '#/definitions/NtpConfiguration'
+      responses:
+        "204":
+          description: No Content. The NTP service configuration was successfully updated on the reader.
+        "400":
+          description: Bad Request. The request body contained a setting the server could not understand.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/time/ntp/servers:
+    get:
+      summary: Retrieve NTP servers.
+      description: |
+        Retrieves NTP servers currently being used on the reader. These servers could be either statically
+        configured or dynamically discovered via a DHCP server.
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/NtpServer'
+            maxItems: 12
+    post:
+      summary: Add a static NTP server.
+      description: |
+        Adds a static NTP server to the reader. A NTP server can be specified by either hostname
+        or IP address. The newly created NTP server object is returned upon a successful completion.
+        The reader allows up to 6 static NTP servers.
+      parameters:
+        - in: body
+          name: ntpServer
+          description: The static NTP server to add.
+          required: true
+          schema:
+            type: object
+            properties:
+              server:
+                type: string
+                description: |
+                  Fully qualified domain name or IP address of the NTP server. Could be either an IPv4
+                  address in dot-decimal format or an IPv6 address compliant with RFC-5952.
+                minLength: 1
+                maxLength: 253
+      responses:
+        "201":
+          description: Created. The NTP server was successfully added to the reader.
+          schema:
+            $ref: '#/definitions/NtpServer'
+        "400":
+          description: Bad Request. The request body was not understood by the server.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /system/time/ntp/servers/{serverId}:
+    get:
+      summary: Retrieve details on a specific NTP server.
+      description: Retrieves details on a specific NTP server.
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          type: integer
+          description: The unique identifier assigned to the NTP server by the reader.
+      responses:
+        "200":
+          description: OK.
+          schema:
+            $ref: '#/definitions/NtpServerInfo'
+        "404":
+          description: Not found. The NTP server with the specified ID was not found on the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+    delete:
+      summary: Remove a static NTP server.
+      description: |
+        Removes a static NTP server from the reader. Note that dynamic NTP servers connot
+        be removed. Both static and dynamic servers could be used together to improve the
+        reliability and accuracy of the system time.
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          type: integer
+          description: The ID of the static NTP server to be removed.
+      responses:
+        "200":
+          description: |
+            OK. The specified NTP server entry was removed from the reader and its info is returned in the response.
+          schema:
+            $ref: '#/definitions/NtpServerInfo'
+        "403":
+          description: Forbidden. The server is dynamic and cannot be removed from the reader.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not found. A static NTP server with the specified ID could not be found.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+parameters:
+  PresetId:
+    in: path
+    name: presetId
+    description: The name of a preset.
+    type: string
+    pattern: ^[a-zA-Z0-9_.-]+$
+    maxLength: 128
+    required: true
+  PutPresetId:
+    in: path
+    name: presetId
+    description: The name of a preset.
+    type: string
+    pattern: ^(?!default|impinj)[a-zA-Z0-9_.-]+$
+    maxLength: 128
+    required: true
+  InventoryRequestParameter:
+    in: body
+    name: presetObject
+    description: inventory profile configuration
+    required: true
+    schema:
+      $ref: '#/definitions/InventoryRequest'
+  CertificateId:
+    in: path
+    name: certId
+    description: The unique identifier assigned to the certificate by the reader.
+    type: integer
+    minimum: 1
+    required: true
+  InterfaceId:
+    in: path
+    name: interfaceId
+    description: The unique identifier of the network interface assigned by the reader.
+    type: integer
+    minimum: 0
+    maximum: 32
+    required: true
+  NetworkProtocol:
+    in: path
+    name: networkProtocol
+    description: The network protocol version of the configuration.
+    type: string
+    enum:
+      - ipv4
+      - ipv6
+    required: true
+  TlsService:
+    in: path
+    name: tlsService
+    description: Available services on the reader that use TLS certificates.
+    type: string
+    enum:
+      - https-server
+      - mqtt-client
+      - cap-encryption
+    required: true
+  UserId:
+    in: path
+    name: userId
+    description: The unique identifier for a user.
+    type: integer
+    minimum: 0
+    required: true
+definitions:
+  PresetId:
+    type: string
+    pattern: ^[a-zA-Z0-9_.-]+$
+    maxLength: 128
+    description: The profile preset identifier.
+  PresetsSchema:
+    type: object
+    description: Reader-specific JSON schema for the profile presets.
+  Epc:
+    type: string
+    format: Base64Url-Encoding
+    description: The base64url-encoded EPC of the tag.
+  EpcHex:
+    type: string
+    pattern: ^[0-9A-F]*$
+    description: The hex-encoded EPC of the tag.
+  Tid:
+    type: string
+    format: Base64Url-Encoding
+    description: The base64url-encoded TID of the tag.
+  TidHex:
+    type: string
+    pattern: ^[0-9A-F]+$
+    description: The hex-encoded TID of the tag.
+  XpcHex:
+    type: string
+    pattern: ^[0-9A-F]*$
+    description: |
+      The hex-encode Extended protocol control (XPC) word(s) reported by the tag. XPC_W1 is delivered first, followed by XPC_W2.
+  AntennaPort:
+    type: integer
+    minimum: 1
+    description: The port number of the antenna.
+  AntennaName:
+    type: string
+    pattern: ^[a-zA-Z0-9_.-]+$
+    maxLength: 64
+    description: |
+      Name for the antenna, if set reported in all tagInventoryEvents generated by the named antenna configuration.
+  TransmitPowerCdbm:
+    type: integer
+    description: |
+      The transmit power used by the reader, specified in 25 cdBm increments.
+  RfMode:
+    type: integer
+    description: |
+      The RF mode to use while inventorying. Please refer to the reader documentation for details.
+  InventorySearchMode:
+    type: string
+    description: Specifies how the reader searches for tags
+    enum:
+      - single-target
+      - dual-target
+      - single-target-with-tagfocus
+      - single-target-b-to-a
+      - dual-target-with-b-to-a-select
+  InventorySession:
+    type: integer
+    minimum: 0
+    maximum: 3
+    description: The session (0-3) to inventory the tags in.
+  TagMemoryBank:
+    type: string
+    description: The different memory banks that can potentially be read from a tag.
+    enum:
+      - epc
+      - tid
+      - user
+      - reserved
+  FastId:
+    description: Specifies to enable or disable the Impinj Fast ID extension.
+    type: string
+    enum:
+      - disabled
+      - enabled
+    default: disabled
+  ErrorResponse:
+    type: object
+    properties:
+      message:
+        type: string
+        description: A message with information about the error.
+      invalidPropertyId:
+        type: string
+        description: A schema pointer to the invalid property of the request.
+      detail:
+        type: string
+        description: Additional details about the error.
+    required:
+      - message
+  EventWebhookConfiguration:
+    type: object
+    description: |
+      Configuration for the Event Webhook.
+
+      This output mechanism sends events in batches via HTTP POST request to the
+      specified URL. Event batches are sent in JSON format as an array
+      containing ReaderEvent objects.
+
+      Events are added to an internal queue. A batch will be sent from the
+      queue whenever the size of the queue reaches "eventBatchLimit" or
+      "eventBatchLingerMilliseconds" has elapsed since the last batch was sent.
+    properties:
+      active:
+        type: boolean
+        description: Used to enable or disable webhook publishing.
+        default: false
+      serverConfiguration:
+        $ref: '#/definitions/WebhookServerConfiguration'
+      retry:
+        $ref: '#/definitions/WebhookRetryConfiguration'
+      eventBatchLimit:
+        type: integer
+        description: |
+          The max number of events sent in a batch.
+        minimum: 1
+        maximum: 300000
+        default: 10000
+      eventBatchLingerMilliseconds:
+        type: integer
+        description: |
+          The next batch will be sent when the linger time has elapsed since the
+          last batch was sent successfully. If no events have queued for
+          delivery when the linger time elapses, an empty batch will be sent.
+        minimum: 1
+        maximum: 900000
+        default: 1000
+      eventBufferSize:
+        description: |
+          The minimum number of events that will be queued on the reader waiting for delivery.
+          When the queue exceeds this size, events will periodically be purged and an "OverflowEvent"
+          will be inserted into the queue in place of the purged events.
+        type: integer
+        minimum: 1000
+        maximum: 300000
+        default: 100000
+  TagPresenceResponse:
+    type: object
+    properties:
+      isPresent:
+        type: boolean
+        description: Whether the specified tag was seen on the specified antenna in the reporting interval.
+  TagFilter:
+    description: |
+      Identifies a subset of the tag population to match against, and whether tags that match
+      the provided criteria are included or excluded from the set.
+    type: object
+    properties:
+      action:
+        description: Specifies if tags matching the provided criteria should be included or excluded from the set.
+        type: string
+        enum:
+          - include
+          - exclude
+      tagMemoryBank:
+        description: Specifies which memory bank on the tag is of interest.
+        type: string
+        enum:
+          - epc
+          - tid
+          - user
+      bitOffset:
+        description: The index into the memory bank where the mask should be applied, in bits.
+        type: integer
+        minimum: 0
+        maximum: 8192
+      mask:
+        description: The pattern to match against, specified as a hexadecimal string.
+        type: string
+        pattern: ^[0-9A-Fa-f]+$
+        minLength: 1
+        maxLength: 64
+      maskLength:
+        description: |
+          When the desired mask's length is not divisible by four, specify how
+          much of the provided mask should be used, in bits. This means the mask
+          is left-justified.
+        type: integer
+        minimum: 1
+        maximum: 255
+    required:
+      - action
+      - tagMemoryBank
+      - bitOffset
+      - mask
+  InventoryFilterConfiguration:
+    description: |
+      When only a subset of the tag population is of interest to the client application,
+      filters can identify this subset, ensuring only tags of interest are inventoried.
+    type: object
+    properties:
+      filters:
+        $ref: '#/definitions/Filters'
+      filterLink:
+        $ref: '#/definitions/FilterLink'
+      filterVerification:
+        $ref: '#/definitions/FilterVerification'
+    required:
+      - filters
+  Filters:
+    description: An array of filters to be applied to the tag population.
+    type: array
+    items:
+      $ref: '#/definitions/TagFilter'
+    minItems: 1
+    maxItems: 2
+  FilterLink:
+    description: |
+      When multiple filters are provided, this specifies if included tags must
+      match **any** (`union`) or **all** (`intersection`) of the provided filters.
+
+      Note: When performing operations that modify tags, "intersection" is the only
+      supported filter link.
+    type: string
+    enum:
+      - union
+      - intersection
+    default: union
+  FilterVerification:
+    description: |
+      When active, a tag filter verification check will be performed on-reader for
+      each tag singulated. This prevents tags from being reported that did not match
+      the filter criteria, yet erroneously participated in the inventory round because
+      they failed to receive the filter spec broadcast in the Select command.
+
+      Note: Active filter verification is incompatible with inventory of tags in Protected Mode.
+    type: string
+    enum:
+      - disabled
+      - active
+      - passive
+    default: passive
+  TransmitPowerSweepConfiguration:
+    description: |
+      In multi-reader environments, using power-sweeping can improve tag readability by reducing
+      reader-to-reader interference. Each inventory round is performed repeatedly at progressively
+      higher transmit power levels, with the last inventory round using the antenna's configured
+      transmit power.
+
+      For example, if the antenna is configured with a transmit power of 3000 cdBm, and you provide
+      a minimum power of 2300 cdBm and a step size of 200 cdB, inventory rounds will be performed
+      at the following, increasing power levels: 2400, 2600, 2800, and 3000 cdBm.
+    type: object
+    properties:
+      minimumPowerCdbm:
+        description: |
+          The minimum power at which the first inventory round  will be performed. If the difference
+          between this value and the antenna's transmit power is not a multiple of the step size,
+          this value will be rounded up.
+
+          This value must be less than or equal to the antenna's transmit power minus the provided
+          step size.
+        type: integer
+      stepSizeCdb:
+        description: |
+          The amount of extra power each successive inventory round should use. If the reader
+          cannot precisely provide this step size, it will round to the nearest possible step size.
+        type: integer
+        minimum: 25
+        maximum: 600
+    required:
+      - minimumPowerCdbm
+      - stepSizeCdb
+  TagAuthentication:
+    description: |
+      Enables a tag authentication challenge to be sent to each tag that is inventoried.
+    type: object
+    properties:
+      messageHex:
+        type: string
+        minLength: 0
+        maxLength: 12
+        pattern: ^(|0[0-7][0-9A-Fa-f]{10})$
+        description: |
+          The challenge message to send to the authentication engine. If empty then a random challenge message
+          will be auto generated by the reader that will request the tag append the TID. If not empty
+          the message must be 48 bits (12 hex digits) that begins with a 6 bit header and is followed by a 42 bit challenge.
+          The format of the 6 bit header is two bits of auth method which must be 00, 3 bits reserved for future
+          use which must be 000, and 1 bit that when set to 1 requests the tag append the TID to the
+          authentication response.
+    required:
+      - messageHex
+  TagAuthenticationResponse:
+    description: |
+      The response to an authentication challenge for the tag.
+    type: object
+    properties:
+      messageHex:
+        type: string
+        minLength: 12
+        maxLength: 12
+        pattern: ^[0-9A-F]+$
+        description: The challenge message that was sent to the tag.
+      responseHex:
+        type: string
+        pattern: ^[0-9A-F]*$
+        minLength: 0
+        maxLength: 16
+        description: |
+          The authentication response that was received from the tag. If a value other than success was received
+          from the tag, responseHex will contain an empty string.
+      tidHex:
+        type: string
+        pattern: ^[0-9A-F]+$
+        minLength: 16
+        maxLength: 16
+        description: |
+          Present if 64 bits of TID information, which excludes TID words 0 and 2, was returned with the
+          authentication response received from the tag.
+    required:
+      - responseHex
+  CommonEventConfiguration:
+    type: object
+    description: EventConfiguration that applies to all events.
+    default: {}
+    properties:
+      hostname:
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+        description: Enable or disable the inclusion of the reader's hostname in all events.
+  TagReportingConfiguration:
+    type: object
+    description: Configuration of tag reporting behavior.
+    default: {}
+    properties:
+      reportingIntervalSeconds:
+        type: integer
+        description: |
+          The reporting interval is the duration after which a tag persisting in the field of view is
+          reported again. Set to zero to disable the feature.
+        minimum: 0
+        maximum: 600
+        default: 0
+      tagCacheSize:
+        type: integer
+        description: |
+          The maximum number of unique tags expected in the field of view during the reporting interval.
+        minimum: 1024
+        maximum: 8192
+        default: 2048
+      antennaIdentifier:
+        description: TagInventoryEvent field to use to identify antenna.
+        type: string
+        enum:
+          - antennaPort
+          - antennaName
+        default: antennaPort
+      tagIdentifier:
+        description: TagInventoryEvent field to use to identify unique tag.
+        type: string
+        enum:
+          - epc
+          - tid
+        default: epc
+  TagSecurityModes:
+    description: |
+      When specified, the reader will write the protected and short-range
+      modes/bits for all inventoried tags. Both bits will be written when this
+      property is provided.
+
+      This configuration is only supported by Impinj M700 Series tag chips
+      and has undefined behavior if used with other tags.
+
+      A non-zero access password must be set to modify these modes.
+
+      The status of this operation will be reported in a TagInventoryEvent.
+    type: object
+    properties:
+      protected:
+        type: boolean
+        default: false
+      shortRange:
+        type: boolean
+        default: false
+  TagInventoryEventConfiguration:
+    type: object
+    description: Configuration for how tagInventoryEvents will be published.
+    default: {}
+    properties:
+      tagReporting:
+        $ref: '#/definitions/TagReportingConfiguration'
+      epc:
+        description: Enable or disable reporting of the epc property.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: enabled
+      epcHex:
+        description: Enable or disable reporting of the epcHex property.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+      tid:
+        description: |
+          Enable or disable reporting of the tid property, fastId must be enabled in an
+          InventoryAntennaConfiguration for tid information to be available for reporting.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: enabled
+      tidHex:
+        description: |
+          Enable or disable reporting of the tidHex property, fastId must be enabled in an
+          InventoryAntennaConfiguration for tid information to be available for reporting.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+      xpcHex:
+        description: Enable or disable reporting Extended Protocol Control words.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+      antennaPort:
+        description: Enable or disable reporting of the antennaPort.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: enabled
+      transmitPowerCdbm:
+        description: Enable or disable reporting of the transmit power.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: enabled
+      peakRssiCdbm:
+        description: Enable or disable reporting of the peak rssi.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: enabled
+      frequency:
+        description: Enable or disable reporting of the frequency.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: enabled
+      pc:
+        description: Enable or disable reporting of the PC word.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+      lastSeenTime:
+        description: Enable or disable reporting of lastSeenTime
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+      phaseAngle:
+        description: Enable or disable reporting of the phase angle.
+        type: string
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+  InventoryEventConfiguration:
+    type: object
+    description: Configuration for how events will be published
+    default: {}
+    properties:
+      common:
+        $ref: '#/definitions/CommonEventConfiguration'
+      tagInventory:
+        $ref: '#/definitions/TagInventoryEventConfiguration'
+      antennaActivationEventDelivery:
+        type: string
+        description: Enable or disable delivery of the antennaActivationEvent
+        enum:
+          - disabled
+          - enabled
+        default: disabled
+  TagMemoryRead:
+    type: object
+    description: |
+      This structure is used to specify a range of tag memory to be read.
+    properties:
+      memoryBank:
+        $ref: '#/definitions/TagMemoryBank'
+      wordOffset:
+        type: integer
+        description: |
+          The offset, in 16-bit words, relative to the start of the specified memory bank where reading will begin.
+        minimum: 0
+        maximum: 65535
+      wordCount:
+        type: integer
+        description: |
+          The number of 16-bit words to read.
+        minimum: 1
+        maximum: 60
+    required:
+      - memoryBank
+      - wordOffset
+      - wordCount
+  TagMemoryData:
+    type: object
+    description: |
+      Represents a block of tag memory that was read.
+    properties:
+      memoryBank:
+        $ref: '#/definitions/TagMemoryBank'
+      wordOffset:
+        type: integer
+        description: |
+          The offset, in 16-bit words, relative to the start of the specified memory bank, from where the memory was read.
+        minimum: 0
+        maximum: 65535
+      tagDataHex:
+        type: string
+        pattern: ^[0-9A-F]*$
+        description: |
+          The hex-encoded contents of the tag's memory. An empty string is sent by the device if the tag memory read
+          was not successful.
+    required:
+      - memoryBank
+      - wordOffset
+      - tagDataHex
+  TagModificationResponse:
+    description: Response for a tag modifying operation.
+    type: object
+    properties:
+      response:
+        type: string
+        enum:
+          - success
+          - tag-memory-overrun-error
+          - tag-memory-locked-error
+          - insufficient-power
+          - nonspecific-tag-error
+          - no-response-from-tag
+          - nonspecific-reader-error
+          - not-attempted
+          - failure
+    required:
+      - response
+  InventoryAntennaConfiguration:
+    type: object
+    properties:
+      antennaName:
+        $ref: '#/definitions/AntennaName'
+      antennaPort:
+        $ref: '#/definitions/AntennaPort'
+      transmitPowerCdbm:
+        $ref: '#/definitions/TransmitPowerCdbm'
+      rfMode:
+        $ref: '#/definitions/RfMode'
+      inventorySession:
+        $ref: '#/definitions/InventorySession'
+      inventorySearchMode:
+        $ref: '#/definitions/InventorySearchMode'
+      estimatedTagPopulation:
+        type: integer
+        minimum: 1
+        maximum: 32768
+        description: The estimated number of tags in the antenna's field of view.
+      filtering:
+        $ref: '#/definitions/InventoryFilterConfiguration'
+      powerSweeping:
+        $ref: '#/definitions/TransmitPowerSweepConfiguration'
+      fastId:
+        $ref: '#/definitions/FastId'
+      protectedModePinHex:
+        description: |
+          The PIN used to inventory tags in protected mode. By default, only tags with the
+          specified PIN will respond. If the "filtering" property is provided, default behavior
+          will be overridden and tags will respond according to the provided filters regardless
+          of their protected state.
+
+          Note: Unprotected tags may also respond if they have the value of the
+          PIN stored in their user memory.
+
+          Note: Active filter verification is incompatible with inventory of tags in Protected Mode.
+        type: string
+        pattern: ^[0-9a-fA-F]*$
+        minLength: 8
+        maxLength: 8
+      receiveSensitivityDbm:
+        type: integer
+        description: |
+          The receive sensitivity in dBm.
+          This setting will limit the reported tags to those with an RSSI greater than this value.
+          To have the reader report tags at its greatest sensitivity do not specify this parameter.
+      tagAuthentication:
+        $ref: '#/definitions/TagAuthentication'
+      tagMemoryReads:
+        description: |
+          When specified, the reader will perform additional access operations and return
+          additional data from the tag, at the cost of slower tag throughput.
+        type: array
+        items:
+          $ref: '#/definitions/TagMemoryRead'
+        minItems: 1
+        maxItems: 4
+      tagAccessPasswordHex:
+        description: |
+          The tag access password to use when executing access commands that require a password to complete.
+
+          If not specified, the value of `protectedModePinHex` will be used.
+        type: string
+        pattern: ^[0-9a-fA-F]*$
+        minLength: 8
+        maxLength: 8
+      tagAccessPasswordWriteHex:
+        description: |
+          When specified, the reader will write the access password to all
+          inventoried tags.
+
+          The status of this operation will be reported in a TagInventoryEvent.
+        type: string
+        pattern: ^[0-9a-fA-F]*$
+        minLength: 8
+        maxLength: 8
+      tagSecurityModesWrite:
+        $ref: '#/definitions/TagSecurityModes'
+    required:
+      - antennaPort
+      - transmitPowerCdbm
+      - rfMode
+      - inventorySession
+      - inventorySearchMode
+      - estimatedTagPopulation
+  InventoryStartTrigger:
+    description: |
+      Start the inventory when the specified condition has been satisfied.
+    type: object
+    properties:
+      gpiTransitionEvent:
+        $ref: '#/definitions/GpiTransitionEvent'
+  InventoryStopTrigger:
+    description: |
+      Stop the inventory when the specified condition has been satisfied.
+    type: object
+    properties:
+      gpiTransitionEvent:
+        $ref: '#/definitions/GpiTransitionEvent'
+  InventoryRequest:
+    type: object
+    properties:
+      eventConfig:
+        $ref: '#/definitions/InventoryEventConfiguration'
+      antennaConfigs:
+        type: array
+        items:
+          $ref: '#/definitions/InventoryAntennaConfiguration'
+        minItems: 1
+        maxItems: 255
+      channelFrequenciesKHz:
+        description: |
+          For non frequency hopping regions that allow the choice of operating frequency, this array contains the
+          sequence of frequencies to use. Permissible values are region-dependent and will be included in the JSON
+          schema produced by the reader.
+        type: array
+        minItems: 1
+        items:
+          type: integer
+      startTriggers:
+        description: |
+          This property contains an array of triggers that will start the inventory. If any
+          triggers are specified, then the RFID operation will transition to the ARMED state.
+
+          When the reader is in the ARMED state, a trigger will transition the reader to the RUNNING
+          state and begin the inventory.
+        type: array
+        minItems: 1
+        maxItems: 1
+        items:
+          $ref: '#/definitions/InventoryStartTrigger'
+      stopTriggers:
+        description: |
+          This property contains an array of triggers that will stop the inventory.
+
+          When the reader is in the RUNNING state, a trigger will transition the reader to the ARMED
+          state and stop the inventory.
+        type: array
+        minItems: 1
+        maxItems: 1
+        items:
+          $ref: '#/definitions/InventoryStopTrigger'
+    required:
+      - antennaConfigs
+  ReaderStatus:
+    type: object
+    description: Returns the current status of the reader.
+    properties:
+      activePreset:
+        type: object
+        description: |
+          The running preset. If no preset is running, this property is not
+          included in the status response. The `id` property will be absent if
+          a transient preset is running.
+        properties:
+          id:
+            $ref: '#/definitions/PresetId'
+          profile:
+            description: The profile of the running preset.
+            type: string
+      status:
+        type: string
+        description: |
+          Indicates whether an RFID operation is currenty running on the reader (running),
+          is currently not running an RFID operation, but is waiting to be triggered (armed),
+          or is not running an RFID operation and is not waiting to be triggered (idle).
+        enum:
+          - running
+          - armed
+          - idle
+      time:
+        type: string
+        format: date-time
+        description: The current, system time on the reader.
+      serialNumber:
+        type: string
+        description: The serial number of the reader.
+        example: 370-10-15-0036
+      mqttBrokerConnectionStatus:
+        type: string
+        description: The connection status to the MQTT broker.
+        enum:
+          - connected
+          - disconnected
+      mqttTlsAuthentication:
+        type: string
+        description: |
+          The Secure-MQTT authentication and encryption status. \
+          none -- server not authenticated, no encryption \
+          server -- server authenticated, TLS encryption
+        enum:
+          - none
+          - server
+      kafkaClusterConnectionStatus:
+        type: string
+        description: |
+          The connection status to the Kafka cluster.
+          connected -- The device is connected to at least one broker in the Kafka cluster.
+          disconnected -- The device is not connected to any brokers within the Kafka cluster.
+        enum:
+          - connected
+          - disconnected
+      eventWebhookStatus:
+        $ref: '#/definitions/WebhookStatus'
+  StreamConfiguration:
+    type: object
+    description: |
+      Contains configuration options for publishing data to HTTP streams.  These settings apply to all
+      HTTP streams and also affect the setting of the history buffer that will be used when a new HTTP stream
+      is established.
+    properties:
+      eventBufferSize:
+        type: integer
+        description: |
+          Number of events that can be stored on the reader waiting for future delivery.  If the bufferSize is 0
+          then no buffer is created and no history will be saved.
+        minimum: 0
+        maximum: 300000
+        default: 0
+      eventPerSecondLimit:
+        type: integer
+        description: |
+          Maximum number of events that may be delivered per second. This setting can be used to throttle the
+          delivery of events during peak transmission times such as when replaying history during a new
+          connection. Care should be taken to not set this value lower than the normal event generation rate
+          of the reader or the queue attached to the HTTP stream will fill up and events will be purged. A
+          value of Zero (0) means that no eventsPerSecondLimit is applied.
+        minimum: 0
+        maximum: 100000
+        default: 0
+      eventAgeLimitMinutes:
+        type: integer
+        description: |
+          Maximum age of any event in the history buffer.  Any event older than this will be purged automatically
+          from the buffer without the generation of an OverflowEvent.  Use this value to configure the maximum
+          event lifetime for the history buffer.
+        minimum: 1
+        maximum: 1440
+        default: 10
+      keepAliveIntervalSeconds:
+        type: integer
+        description: |
+          The keep-alive interval in seconds.
+          If no events (or previous keep-alive) have been transmitted in this amount of time a newline (CRLF) will
+          be sent. If this field is updated and no events are available, a keep-alive will be immediately sent.
+        minimum: 1
+        maximum: 300
+        default: 30
+  MqttConfiguration:
+    type: object
+    description: |
+      Contains the connection and configuration options for connecting and publishing data to an
+      MQTT broker.
+    properties:
+      active:
+        type: boolean
+        description: Used to enable or disable MQTT output.
+        default: false
+      brokerHostname:
+        type: string
+        description: The hostname to use for connecting to the MQTT broker.
+        minLength: 1
+        maxLength: 253
+      brokerPort:
+        type: integer
+        description: The TCP port to use for connecting to the MQTT broker.
+        minimum: 1
+        maximum: 65535
+        default: 1883
+      cleanSession:
+        type: boolean
+        description: |
+          This flag is used for determining the client's session type. When set to `true`,
+          the broker will remove all information about this device when it disconnects.
+          When set to `false`, the broker considers this device to be a durable client
+          and preserves the appropriate state across client sessions.
+        default: false
+      clientId:
+        type: string
+        description: |
+          A string used to uniquely identify this device to the MQTT broker. This
+          identifier is used for session management, allowing clients to be durable
+          across several disconnects and reconnects.
+        minLength: 1
+        maxLength: 23
+        pattern: ^[a-zA-Z0-9]+$
+      eventBufferSize:
+        type: integer
+        description: |
+          Number of events that can be stored on the reader waiting for delivery to the MQTT broker.
+        minimum: 1000
+        maximum: 300000
+        default: 100000
+      eventPerSecondLimit:
+        type: integer
+        description: |
+          Maximum number of events that may be delivered per second.  This setting can be used to throttle the
+          delivery of events during peak transmission times such as recovery after a network outage.  Care
+          should be taken to not set this value lower than the normal event generation rate of the reader or
+          the queue will fill up and events will be purged.  A value of Zero (0) means that no
+          eventsPerSecondLimit is applied.
+        minimum: 0
+        maximum: 100000
+        default: 0
+      eventPendingDeliveryLimit:
+        type: integer
+        description: |
+          Maximum number of events concurrently processed by the mqtt delivery layer. When
+          eventQualityOfService is greater than Zero (0) this will limit the rate of delivery to the MQTT
+          broker.
+        minimum: 10
+        maximum: 10000
+        default: 10
+      eventQualityOfService:
+        type: integer
+        description: |
+          The QoS level of the MQTT connection. The different levels can be described
+          as follows, according to the MQTT specification:
+
+          #### QoS 0: At most once delivery
+
+          The message is delivered according to the capabilities of the underlying network.
+          No response is sent by the receiver and no retry is performed by the sender. The
+          message arrives at the receiver either once or not at all.
+
+          #### QoS 1: At least once delivery
+
+          This quality of service ensures that the message arrives at the receiver at least
+          once, possibly multiple times.
+
+          #### QoS 2: Exactly once delivery
+
+          This is the highest quality of service, for use when neither loss nor duplication
+          of messages are acceptable. There is an increased overhead associated with this
+          quality of service.
+        minimum: 0
+        maximum: 2
+        default: 0
+      eventTopic:
+        type: string
+        description: The base topic where the device will publish events.
+        pattern: ^[^#+]*$
+        minLength: 1
+        maxLength: 200
+      keepAliveIntervalSeconds:
+        type: integer
+        description: |
+          Specifies how often the device should check-in with the broker by sending a control
+          packet. From the MQTT specification:
+
+          > If the Keep Alive value is non-zero and the Server does not receive a Control Packet
+          > from the Client within one and a half times the Keep Alive time period, it MUST
+          > disconnect the Network Connection to the Client as if the network had failed.
+        minimum: 0
+        maximum: 65535
+        default: 0
+      tlsEnabled:
+        type: boolean
+        description: |
+          Specifies whether MQTT client should initiate secure connections to the broker.
+          When set to `true`, CA certificate(s) that signed the broker's server certificate
+          must be installed on the reader to allow for server authentication unless the server
+          certificate could be traced back to a well-known root CA pre-installed on the reader.
+        default: false
+      username:
+        type: string
+        description: The username to use when authenticating with the broker.
+        minLength: 0
+        maxLength: 200
+        default: ""
+      password:
+        type: string
+        description: The password to use when authenticating with the broker.
+        format: password
+        minLength: 0
+        maxLength: 200
+        default: ""
+      willTopic:
+        type: string
+        description: |
+          The topic to which status messages are sent.
+          If this parameter is unset or an empty string, no status messages will be sent.
+          See `willMessage`, `connectMessage`, and `disconnectMessage` (the status messages).
+        pattern: ^[^#+]*$
+        minLength: 0
+        maxLength: 200
+        default: ""
+      willMessage:
+        type: string
+        description: |
+          The status message to be sent by the broker to the `willTopic` if the reader disconnects ungracefully.
+          This normally means something unusual has happened such a power outage, network error, or firmware error.
+        minLength: 0
+        maxLength: 500
+        default: connection lost
+      willQualityOfService:
+        type: integer
+        description: |
+          The Quality of Service (QoS) of status messages.
+          See `willMessage`, `connectMessage`, and `disconnectMessage` (the status messages).
+          See `eventQualityOfService` for details on how the different quality of service levels affect message transmission.
+        minimum: 0
+        maximum: 2
+        default: 1
+      connectMessage:
+        type: string
+        description: |
+          The status message to send to the `willTopic` when the reader connects or reconnects to the broker.
+        minLength: 0
+        maxLength: 500
+        default: connected
+      disconnectMessage:
+        type: string
+        description: |
+          The status message to send to the `willTopic` when the reader disconnects from the broker gracefully.
+          A graceful disconnect includes disabling the IoT Interface, disabling MQTT output, or rebooting the reader.
+        minLength: 0
+        maxLength: 500
+        default: ""
+    required:
+      - brokerHostname
+      - clientId
+      - eventTopic
+  KafkaConfiguration:
+    type: object
+    description: |
+      Contains the connection and configuration options for connecting and pushing messages to a
+      Kafka broker.
+    properties:
+      active:
+        type: boolean
+        description: Used to enable or disable Kafka output.
+        default: false
+      bootstraps:
+        description: |
+          A list of Kafka bootstrap server configurations to connect and push messages to.
+          Device will connect to broker and utilize metadata to determine additional brokers
+          within the cluster that aren't included in this list.
+        type: array
+        items:
+          $ref: '#/definitions/KafkaBootstrapServerConfiguration'
+        minItems: 1
+        maxItems: 100
+      clientId:
+        type: string
+        description: A string used to uniquely identify this device to the Kafka broker.
+        minLength: 1
+        maxLength: 23
+        pattern: ^[a-zA-Z0-9]+$
+      eventTopic:
+        type: string
+        description: The base topic where the device will publish events.
+        pattern: ^[a-zA-Z0-9._-]+$
+        minLength: 1
+        maxLength: 200
+      partitionKey:
+        type: string
+        description: |
+          A string specifying the message key, used for partitioning.
+          If this is not specified, will randomly select partition.
+        minLength: 0
+        maxLength: 200
+        default: ""
+      eventBatchLimit:
+        type: integer
+        description: |
+          An integer specifying maximum number of events/messages batched in one message set.
+          The eventBatchLingerMilliseconds value and the client's internal buffer size will impact
+          actual number of messages contained within one message set.
+        minimum: 1
+        maximum: 8192
+        default: 8192
+      eventBatchLingerMilliseconds:
+        type: integer
+        description: |
+          An integer specifying the amount of time, in milliseconds, to wait to send batch messages
+          when eventBatchLimit has not yet been reached. A value of 0 will send each message as it is
+          available.
+        minimum: 0
+        maximum: 900000
+        default: 5
+    required:
+      - bootstraps
+      - clientId
+      - eventTopic
+  KafkaBootstrapServerConfiguration:
+    type: object
+    description: Contains the broker hostname and port for a Kafka connection.
+    properties:
+      hostname:
+        type: string
+        description: The hostname to use for connecting to the Kafka broker.
+        minLength: 1
+        maxLength: 253
+        pattern: ^[^,]+$
+      port:
+        type: integer
+        description: The TCP port to use for connecting to the Kafka broker.
+        minimum: 1
+        maximum: 65535
+        default: 9092
+    required:
+      - hostname
+  TagInventoryEvent:
+    type: object
+    description: |
+      An event sent to deliver information about a tag read during inventory.
+
+      Property details:
+
+      tagAccessPasswordWriteResponse -- provided if tagAccessPasswordWriteHex
+      is specified in the `InventoryAntennaConfiguration` for the antenna
+      generating this event.
+
+      tagSecurityModesWriteResponse -- provided if tagSecurityModesWrite
+      is specified in the `InventoryAntennaConfiguration` for the antenna
+      generating this event.
+    properties:
+      epc:
+        $ref: '#/definitions/Epc'
+      epcHex:
+        $ref: '#/definitions/EpcHex'
+      tid:
+        $ref: '#/definitions/Tid'
+      tidHex:
+        $ref: '#/definitions/TidHex'
+      xpcHex:
+        $ref: '#/definitions/XpcHex'
+      antennaPort:
+        $ref: '#/definitions/AntennaPort'
+      antennaName:
+        $ref: '#/definitions/AntennaName'
+      transmitPowerCdbm:
+        $ref: '#/definitions/TransmitPowerCdbm'
+      peakRssiCdbm:
+        type: integer
+        description: |
+          The peak received power of the EPC backscatter in cdBm. We will give the client the opportunity to
+          enable Impinj's high-precision mode to receive more accurate data.
+      frequency:
+        type: integer
+        description: The frequency that was used to read the tag, in kHz.
+      pc:
+        type: string
+        format: Base64Url-Encoding
+        description: The PC word (16-bits) backscattered by the inventoried tag.
+      lastSeenTime:
+        type: string
+        format: date-time
+        description: |
+          The UTC time at which the tag was last seen.
+      phaseAngle:
+        type: number
+        minimum: 0.0
+        maximum: 360.0
+        description: |
+          The phase angle in degrees of the tag that was read, accurate to two decimal places.
+      tagAccessPasswordWriteResponse:
+        $ref: '#/definitions/TagModificationResponse'
+      tagSecurityModesWriteResponse:
+        $ref: '#/definitions/TagModificationResponse'
+      tagAuthenticationResponse:
+        $ref: '#/definitions/TagAuthenticationResponse'
+      tagMemoryData:
+        type: array
+        description: |
+          This array will be provided if the tagMemoryReads parameter is
+          specified for the `InventoryAntennaConfiguration` for the antenna
+          generating this event.
+        items:
+          $ref: '#/definitions/TagMemoryData'
+        minItems: 1
+        maxItems: 4
+  AntennaConnectedEvent:
+    type: object
+    description: |
+      An event sent when the specified antenna port is determined to be connected.
+      The event is delivered only when the antenna changes to this state and has built-in hysteresis.
+    properties:
+      antennaPort:
+        $ref: '#/definitions/AntennaPort'
+    required:
+      - antennaPort
+  AntennaDisconnectedEvent:
+    type: object
+    description: |
+      An event sent when the specified antenna port is determined to be disconnected.
+      The event is delivered only when the antenna changes to this state and has built-in hysteresis.
+    properties:
+      antennaPort:
+        $ref: '#/definitions/AntennaPort'
+    required:
+      - antennaPort
+  AntennaActivationEvent:
+    type: object
+    description: |
+      An event sent just before starting inventory after successfully ramping up power on a new antenna.
+    properties:
+      antennaPort:
+        $ref: '#/definitions/AntennaPort'
+    required:
+      - antennaPort
+  InventoryStatusEvent:
+    description: An event sent to deliver a change in the state of the current InventoryRequest.
+    type: object
+    properties:
+      status:
+        description: The new state of the InventoryRequest.
+        type: string
+        enum:
+          - idle
+          - running
+          - armed
+  GpiTransitionEvent:
+    description: An event sent when a GPI state transition occurs.
+    type: object
+    properties:
+      gpi:
+        description: The GPI pin for which the state transition occurred.
+        type: integer
+        minimum: 1
+      transition:
+        description: The transition that occurred on the specified pin.
+        type: string
+        enum:
+          - high-to-low
+          - low-to-high
+  OverflowEvent:
+    type: object
+    description: |
+      An Event sent when an event buffer overflow occurs.
+    properties:
+      firstEventTimestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the first event that was purged from the buffer.
+      lastEventTimestamp:
+        type: string
+        format: date-time
+        description: The timestamp of the last event that was purged from the buffer.
+      eventsPurged:
+        type: integer
+        description: The number of events that were purged from the buffer.
+      eventsRemaining:
+        type: integer
+        description: The number of events that remained in the buffer after it was purged.
+  ReaderEvent:
+    type: object
+    description: |
+      Contains information that is reported with all events such as timestamp.  Also contains
+      exactly one specific event detail object from the list shown here.
+    properties:
+      hostname:
+        type: string
+        description: The hostname of the reader that generated this event.
+      eventType:
+        type: string
+        description: The type of the event, should be the same as the name of the property that contains the event with the string "Event" stripped off.  For example an event with an eventType of "tagInventory" will contain the "tagInventoryEvent" property.
+      timestamp:
+        type: string
+        format: date-time
+        description: |
+          The UTC time at which the event was processed and queued for delivery.
+      tagInventoryEvent:
+        $ref: '#/definitions/TagInventoryEvent'
+      antennaConnectedEvent:
+        $ref: '#/definitions/AntennaConnectedEvent'
+      antennaDisconnectedEvent:
+        $ref: '#/definitions/AntennaDisconnectedEvent'
+      inventoryStatusEvent:
+        $ref: '#/definitions/InventoryStatusEvent'
+      antennaActivationEvent:
+        $ref: '#/definitions/AntennaActivationEvent'
+      overflowEvent:
+        $ref: '#/definitions/OverflowEvent'
+    required:
+      - timestamp
+      - eventType
+  WebhookServerConfiguration:
+    type: object
+    description: |
+      Configuration for making a webhook request.
+    properties:
+      url:
+        type: string
+        description: |
+          The URL to which the webhook will be posted. Supported protocols are
+          "http" or "https". For "https", TLSv1.2 and greater are supported.
+        minLength: 1
+        maxLength: 2048
+        pattern: ^https?:\/\/.
+        example: http://example.com/some/path
+      port:
+        type: integer
+        description: |
+          The remote port number to connect to instead of the protocol default.
+        minimum: 1
+        maximum: 65535
+      authentication:
+        $ref: '#/definitions/WebhookHttpAuthentication'
+      tls:
+        $ref: '#/definitions/WebhookTlsConfiguration'
+    required:
+      - url
+  WebhookRetryConfiguration:
+    type: object
+    description: |
+      If an error occurs while posting the webhook and retry is enabled, the
+      failed request will be stored and periodically retried. No additional
+      requests will be attempted by the webhook until the failed request is
+      successfully made.
+    properties:
+      enabled:
+        type: boolean
+        default: true
+      retryInitialSeconds:
+        type: integer
+        description: |
+          The initial time to wait before retrying the webhook.
+        minimum: 1
+        maximum: 300
+        default: 1
+      retryMaxSeconds:
+        type: integer
+        description: |
+          The retry period will be increased exponentially until this value is
+          reached.
+        minimum: 1
+        maximum: 300
+        default: 30
+    default: {}
+  WebhookStatus:
+    type: object
+    description: |
+      The status of the webhook.
+    properties:
+      status:
+        type: string
+        description: |
+          The general status of the webhook. The "pending" state indicates that
+          the webhook is active, but has not published since being enabled or
+          since the last reader reboot. The "http-error" state occurs if the
+          server replied with an error code. The "network-error" state indicates
+          that the server could not be reached.
+        enum:
+          - disabled
+          - pending
+          - active
+          - http-error
+          - network-error
+      httpStatusCode:
+        type: integer
+        description: |
+          The HTTP status code of the most recent webhook request to the server.
+          This property will be absent if the webhook is pending, disabled or
+          experiencing a network error.
+      timestamp:
+        type: string
+        format: date-time
+        description: |
+          The time at which the last request was attempted. This property will
+          be absent if the webhook is pending or disabled.
+    required:
+      - status
+  WebhookHttpAuthentication:
+    type: object
+    description: |
+      Webhook configuration for authenticating with a server. Only basic
+      authentication is supported.
+    properties:
+      username:
+        type: string
+        maxLength: 200
+      password:
+        type: string
+        format: password
+        maxLength: 200
+  WebhookTlsConfiguration:
+    type: object
+    description: |
+      Webhook configuration for encrypted connections.
+    properties:
+      verifyServer:
+        type: boolean
+        description: |
+          If true, the authenticity and hostname of the TLS/SSL certificate
+          provided by the server will be verified. Setting to false is not
+          recommended in production environments and is not secure, but it may
+          be useful for development environments with self-signed or otherwise
+          invalid certificates.
+        default: true
+    default: {}
+  GpoConfiguration:
+    type: object
+    properties:
+      gpo:
+        description: The GPO pin number.
+        type: integer
+      state:
+        description: The current the state of the pin.
+        type: string
+        enum:
+          - low
+          - high
+    required:
+      - gpo
+      - state
+  GpoConfigurations:
+    type: object
+    properties:
+      gpoConfigurations:
+        description: Array of GPO configurations.
+        type: array
+        items:
+          $ref: '#/definitions/GpoConfiguration'
+        minItems: 0
+    required:
+      - gpoConfigurations
+  AntennaHubInfo:
+    type: object
+    properties:
+      status:
+        type: string
+        description: Antenna-hub configuration status.
+        enum:
+          - Enabled
+          - Disabled
+      antennaHubStates:
+        type: array
+        description: A list of all reader antenna ports and information about connected antenna-hubs.
+        items:
+          $ref: '#/definitions/AntennaHubState'
+        minItems: 1
+    required:
+      - status
+  AntennaHubState:
+    type: object
+    properties:
+      portNumber:
+        type: integer
+        minimum: 1
+      portStatus:
+        type: string
+        description: |
+          Connection status of the antenna port. Status is "unknown" when antenna-hub is enabled pending reboot.
+        enum:
+          - disconnected
+          - connected
+          - unknown
+      serialNumber:
+        type: string
+        pattern: ^[a-fA-F0-9]+$
+        minLength: 16
+        maxLength: 16
+    required:
+      - portNumber
+      - portStatus
+  AuthenticationConfig:
+    type: object
+    properties:
+      authType:
+        type: string
+        description: |
+          Authentication type used for all HTTP/HTTPS communication with the reader.
+        enum:
+          - none
+          - basic
+          - digest
+    required:
+      - authType
+  CertificateConfig:
+    type: object
+    properties:
+      certId:
+        $ref: '#/definitions/CertificateId'
+    required:
+      - certId
+  CertificateId:
+    description: |
+      The unique identifier assigned to the certificate by the reader. Note that this ID
+      does not persist across reboots, but will not change as long as the reader is up
+      and running.
+    type: integer
+    minimum: 1
+    maximum: 4294967295
+  CertificateInfo:
+    type: object
+    properties:
+      certId:
+        $ref: '#/definitions/CertificateId'
+      issuer:
+        type: string
+        description: Identifies the CA that has signed and issued the certificate.
+        maxLength: 256
+      subject:
+        type: string
+        description: Identifies the entity associated with the public key on the certificate.
+        maxLength: 256
+      notBefore:
+        type: string
+        description: The starting date in which the certificate is considered valid.
+        format: date-time
+        maxLength: 32
+      notAfter:
+        type: string
+        description: The ending date in which the certificate is considered valid.
+        format: date-time
+        maxLength: 32
+      intendedPurposes:
+        type: array
+        items:
+          $ref: '#/definitions/ExtendedKeyUsage'
+        maxItems: 5
+  CsrConfiguration:
+    type: object
+    properties:
+      subject:
+        type: object
+        properties:
+          country:
+            type: string
+            description: The 2-letter country name.
+            maxLength: 2
+          state:
+            type: string
+            description: The state or province name.
+            maxLength: 64
+          locality:
+            type: string
+            description: The locality or city name.
+            maxLength: 64
+          organization:
+            type: string
+            description: The organization associated with the certificate.
+            maxLength: 64
+          organizationalUnit:
+            type: string
+            description: The organization unit associated with the certificate.
+            maxLength: 64
+          commonName:
+            type: string
+            description: The common name or hostname for the certificate.
+            minLength: 2
+            maxLength: 64
+        required:
+          - commonName
+      subjectAltNames:
+        description: |
+          A list of subject alternative names to be included in the certificate.
+          These should typically has both bare domain and wildcard domain names.
+          For example: `example.com` and `*.example.com`.
+        type: array
+        items:
+          type: string
+          minLength: 1
+          maxLength: 253
+          pattern: ^([a-zA-Z0-9*][a-zA-Z0-9-.]*[a-zA-Z0-9])$
+        maxItems: 10
+      keyType:
+        type: string
+        description: The certificate's private key algorithm and key size.
+        enum:
+          - rsa-2048
+          - rsa-4096
+          - ecdsa-256
+          - ecdsa-384
+    required:
+      - subject
+  ExtendedKeyUsage:
+    type: string
+    description: The certificate's extended key usage.
+    enum:
+      - server-authentication
+      - client-authentication
+      - code-signing
+  CapInstallationConfiguration:
+    type: object
+    properties:
+      mode:
+        type: string
+        description: |
+          Installation mode for customer application (CAP). When set to `Secure`, the reader
+          will validate the authenticity of the CAP using the keyrings stored on the reader prior
+          to installation. When set to `Open`, no validation will be done and any CAP could be
+          installed on the reader.
+        enum:
+          - Disabled
+          - Open
+          - Secure
+    required:
+      - mode
+  DnsServerAddress:
+    type: string
+    description: |
+      The IP address of the DNS server. Could be either an IPv4 address
+      in dot-decimal format or an IPv6 address compliant with RFC-5952.
+    minLength: 1
+    maxLength: 64
+  DnsServers:
+    type: object
+    properties:
+      staticDnsServers:
+        type: array
+        items:
+          $ref: '#/definitions/DnsServerAddress'
+        maxItems: 12
+      dynamicDnsServers:
+        type: array
+        items:
+          $ref: '#/definitions/DnsServerAddress'
+        readOnly: true
+        maxItems: 12
+    required:
+      - staticDnsServers
+  Hostname:
+    type: object
+    properties:
+      hostname:
+        type: string
+        minLength: 1
+        maxLength: 63
+        pattern: ^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])$
+    required:
+      - hostname
+  HttpConfiguration:
+    type: object
+    properties:
+      active:
+        type: boolean
+        description: |
+          Indicates whether HTTP is enabled or disabled. HTTP is disabled by default
+          for security reasons. HTTP should only be enabled in a trusted environment
+          that does not expose any security risk. Otherwise, it is recommended that
+          HTTP should be kept disabled and HTTPS should be used instead.
+    required:
+      - active
+  HttpsConfiguration:
+    type: object
+    properties:
+      active:
+        type: boolean
+        description: Indicates whether HTTPS is enabled or disabled.
+    required:
+      - active
+  IpConfiguration:
+    type: object
+    properties:
+      addressMode:
+        type: string
+        description: |
+          The addressing mode used for this interface. If the `addressMode` is set to `dynamic`,
+          the optional `staticAddress`, `staticPrefix`, and `staticGateway` provided with the
+          request will be saved on the reader, but not used.
+
+          When the `addressMode` is set to `static`, the values for `staticAddress`, `staticPrefix`,
+          and `staticGateway` will be used for the network interface configuration. If the values
+          for those fields are not provided with the request, the previously set values will be
+          used. If no values are found for 'staticAddress' and `staticPrefix`, an error response
+          will be returned. If no value for 'staticGateway' is found, the reader's gateway will
+          not be configured and the reader can only be accessed within the local network.
+        enum:
+          - dynamic
+          - static
+      staticAddress:
+        type: string
+        description: |
+          The IP address to use when addressMode is set to `static`. Could be either an IPv4 address
+          in dot-decimal format or an IPv6 address compliant with RFC-5952.
+        maxLength: 64
+      staticPrefix:
+        type: integer
+        description: |
+          The network prefix length to use when addressMode is set to `static`.
+          A typical value is 24 for IPv4 and 64 for IPv6.
+        minimum: 8
+        maximum: 128
+      staticGateway:
+        type: string
+        description: |
+          The gateway to use when the `addressMode` is set to `static`. Could be either an IPv4 address
+          in dot-decimal format or an IPv6 address compliant with RFC-5952.
+        maxLength: 64
+    required:
+      - addressMode
+  LlrpConnection:
+    type: object
+    properties:
+      status:
+        type: string
+        description: The status of the LLRP connection.
+        enum:
+          - disabled
+          - connected
+          - disconnected
+      peerAddress:
+        type: string
+        description: |
+          IP address of the connected device. Will contain either an IPv4 address in dot-decimal format,
+          or an IPv6 address compliant with RFC-5952. Will only be present if status is connected.
+        maxLength: 64
+    required:
+      - status
+  LlrpStatus:
+    type: object
+    description: General LLRP and connection status.
+    properties:
+      llrpRfidStatus:
+        description: General LLRP RFID status.
+        type: string
+        enum:
+          - idle
+          - enabled
+          - active
+      llrpConnection:
+        $ref: '#/definitions/LlrpConnection'
+    required:
+      - llrpRfidStatus
+      - llrpConnection
+  MdnsConfiguration:
+    type: object
+    properties:
+      active:
+        type: boolean
+        description: Indicates whether MDNS is enabled or disabled.
+    required:
+      - active
+  NetworkAddress:
+    type: object
+    properties:
+      protocol:
+        $ref: '#/definitions/NetworkProtocol'
+      addressMode:
+        type: string
+        description: The addressing mode for the interface.
+        enum:
+          - dynamic
+          - static
+      address:
+        type: string
+        description: |
+          The IP address of the interface. Could be either an IPv4 address in dot-decimal
+          format or an IPv6 address compliant with RFC-5952. The `protocol` property provides
+          the expected network protocol version of the address.
+        maxLength: 64
+      prefix:
+        type: integer
+        description: |
+          The network prefix length of the interface. A typical value is 24 for IPv4 and 64 for IPv6.
+        minimum: 8
+        maximum: 128
+      gateway:
+        type: string
+        description: |
+          The gateway address of the interface. Could be either an IPv4 address in dot-decimal
+          format or an IPv6 address compliant with RFC-5952.
+        maxLength: 64
+    required:
+      - protocol
+      - addressMode
+  NetworkInterface:
+    type: object
+    properties:
+      interfaceId:
+        type: integer
+        description: A unique identifier of the network interface assigned by the reader.
+        minimum: 0
+      interfaceType:
+        type: string
+        description: Network interface device type.
+        enum:
+          - eth
+          - wlan
+      interfaceName:
+        type: string
+        description: The name of the network interface.
+        minLength: 1
+        maxLength: 64
+      status:
+        type: string
+        description: The state of the network interface.
+        enum:
+          - connected
+          - disconnected
+      enabled:
+        type: boolean
+        description: Indicates whether the interface is enabled or disabled.
+      networkAddress:
+        type: array
+        description: |
+          The current IPv4 and/or IPv6 network addresses on the interface.
+        items:
+          $ref: '#/definitions/NetworkAddress'
+        minItems: 0
+        maxItems: 2
+      hardwareAddress:
+        type: string
+        description: The hardware or MAC address associated with the network interface.
+        pattern: ^(([0-9A-Fa-f]{2}[:]){5}[0-9A-Fa-f]{2})$
+        minLength: 17
+        maxLength: 17
+      pending:
+        type: boolean
+        description: Indicates whether there is a pending configuration that requires a reboot to take effect.
+    required:
+      - interfaceId
+      - interfaceType
+      - interfaceName
+      - enabled
+      - status
+      - networkAddress
+      - hardwareAddress
+  NetworkInterfaceState:
+    type: object
+    properties:
+      enabled:
+        type: boolean
+        description: Indicates whether the interface is enabled or disabled.
+    required:
+      - enabled
+  NetworkWlanAccessPoint:
+    type: object
+    properties:
+      ssid:
+        type: string
+        description: A SSID (Service Set IDentifier) is the access point name.
+        maxLength: 32
+      hardwareAddress:
+        type: string
+        description: The hardware or MAC address associated with the network interface of the access point.
+        pattern: ^(([0-9A-Fa-f]{2}[:]){5}[0-9A-Fa-f]{2})$
+        minLength: 17
+        maxLength: 17
+      securityType:
+        type: string
+        description: The security protocol supported by the access point.
+        enum:
+          - None
+          - WEP
+          - WPA
+          - WPA2
+      mode:
+        type: string
+        description: The network interface operating mode.
+        enum:
+          - adhoc
+          - infra
+          - hotSpot
+          - mesh
+      strength:
+        type: integer
+        description: The access point signal strength.
+      frequency:
+        type: integer
+        description: The access point operating frequency.
+      maxBitrate:
+        type: integer
+        description: The access point, max bit rate.
+    required:
+      - ssid
+      - hardwareAddress
+      - securityType
+      - mode
+      - strength
+      - frequency
+      - maxBitrate
+  NetworkWlanConnection:
+    type: object
+    properties:
+      ssid:
+        type: string
+        description: A SSID (Service Set IDentifier) is the access point name.
+        maxLength: 32
+        minLength: 1
+      password:
+        type: string
+        description: Access point password.
+        maxLength: 63
+        minLength: 8
+    required:
+      - ssid
+      - password
+  NetworkWlanConnectionStatus:
+    type: object
+    properties:
+      ssid:
+        type: string
+        description: A SSID (Service Set IDentifier) is the access point name.
+        maxLength: 32
+      status:
+        type: string
+        description: The state of the network interface.
+        enum:
+          - connected
+          - disconnected
+          - unknown
+    required:
+      - status
+  NetworkProtocol:
+    type: string
+    description: An enumeration of network protocols that are supported by the reader.
+    enum:
+      - ipv4
+      - ipv6
+  NtpConfiguration:
+    type: object
+    properties:
+      active:
+        type: boolean
+        description: |
+          Indicates whether the NTP service should be enabled or disabled. Setting active to false
+          effectively disable NTP service on the reader.
+    required:
+      - active
+  NtpServer:
+    type: object
+    description: Information pertaining to a NTP server on the reader.
+    properties:
+      serverId:
+        type: integer
+        description: The unique identifier assigned to a NTP server by the reader.
+        minimum: 0
+      server:
+        type: string
+        description: |
+          Fully qualified domain name or IP address of the NTP server. Could be either an IPv4
+          address in dot-decimal format or an IPv6 address compliant with RFC-5952.
+        minLength: 1
+        maxLength: 253
+      serverType:
+        type: string
+        description: |
+          Indicates if this is a static or dynamic NTP server. Static servers are statically
+          added by users. Dynamic servers are those discovered automatically via DHCP servers.
+        enum:
+          - static
+          - dynamic
+    required:
+      - serverId
+      - server
+      - serverType
+  NtpServerInfo:
+    type: object
+    description: Detailed information pertaining to a NTP server on the reader.
+    properties:
+      serverId:
+        type: integer
+        description: The unique identifier assigned to a NTP server by the reader.
+        minimum: 0
+      server:
+        type: string
+        description: |
+          Fully qualified domain name or IP address of the NTP server. Could be either an IPv4
+          address in dot-decimal format or an IPv6 address compliant with RFC-5952.
+        minLength: 1
+        maxLength: 253
+      serverType:
+        type: string
+        description: |
+          Indicates if this is a static or dynamic NTP server. Static servers are statically
+          added by users. Dynamic servers are those discovered automatically via DHCP servers.
+        enum:
+          - static
+          - dynamic
+      status:
+        type: string
+        enum:
+          - synchronized
+          - combined
+          - excluded
+          - disconnected
+          - inconsistent
+          - unreliable
+          - unknown
+      poll:
+        type: integer
+        format: int32
+        description: |
+          Shows the rate at which the server is being polled, as a base-2 logarithm of the interval
+          in seconds. Thus, a value of 6 would indicate that a measurement is being made every 64
+          seconds.
+        minimum: 0
+      stratum:
+        type: integer
+        description: |
+          Shows the stratum of the server, as reported in its most recently received sample.
+          Stratum 1 indicates a computer with a locally attached reference clock. A computer that
+          is synchronized to a stratum 1 computer is at stratum 2. A computer that is synchronized
+          to a stratum 2 computer is at stratum 3, and so on.
+        minimum: 0
+        maximum: 16
+      reach:
+        type: integer
+        description: |
+          Shows the server's reachability register printed as an octal number. The register has
+          8 bits and is updated on every received or missed packet from the source. A value of 377
+          indicates that a valid reply was received for all from the last eight transmissions.
+        minimum: 0
+        maximum: 377
+      lastRx:
+        type: string
+        description: |
+          Indicates how long ago the last good sample was received from this server. This is
+          normally in seconds. The letters m, h, d or y indicate minutes, hours, days, or years.
+      offset:
+        type: string
+        description: |
+          The offset between the local clock and the server at the last measurement. The default
+          measurement unit is in seconds, but it can be suffixed by ns (nanoseconds), us (microseconds),
+          ms (milliseconds) for other measurement units.
+    required:
+      - serverId
+      - server
+      - serverType
+  OperatingRegion:
+    type: string
+    description: The descriptive name of a regulatory region.
+    minLength: 1
+    maxLength: 64
+  PasswordInfo:
+    type: object
+    description: Information required to change the password.
+    properties:
+      currentPassword:
+        type: string
+        description: The current password for the user.
+        format: password
+        minLength: 1
+        maxLength: 255
+      newPassword:
+        type: string
+        description: The new password for the user.
+        format: password
+        minLength: 1
+        maxLength: 255
+    required:
+      - currentPassword
+      - newPassword
+  PowerSource:
+    description: Possible power sources for the reader.
+    type: string
+    enum:
+      - auto
+      - poe
+      - poeplus
+  PowerConfiguration:
+    type: object
+    properties:
+      powerSource:
+        $ref: '#/definitions/PowerSource'
+      allocatedPowerMilliwatts:
+        type: integer
+        description: |
+          This field is only available when powerSource is set to auto. Contains the actual
+          power that was allocated for the reader by the switch through negotiation.
+        readOnly: true
+    required:
+      - powerSource
+  RegionInfo:
+    type: object
+    properties:
+      operatingRegion:
+        $ref: '#/definitions/OperatingRegion'
+      selectableRegions:
+        type: array
+        description: A list of unique selectable regions.
+        items:
+          type: string
+          minLength: 1
+          maxLength: 64
+        minItems: 1
+        maxItems: 255
+        readOnly: true
+    required:
+      - operatingRegion
+      - selectableRegions
+  RfidInterface:
+    type: object
+    properties:
+      rfidInterface:
+        description: An enumeration of interfaces that are supported by the reader.
+        type: string
+        enum:
+          - llrp
+          - rest
+    required:
+      - rfidInterface
+  SearchDomain:
+    type: string
+    description: The search domain used in conjunction with DNS.
+    minLength: 2
+    maxLength: 253
+    pattern: ^([a-zA-Z0-9][a-zA-Z0-9-.]*[a-zA-Z0-9])$
+  SearchDomains:
+    type: object
+    properties:
+      staticSearchDomains:
+        type: array
+        items:
+          $ref: '#/definitions/SearchDomain'
+        maxItems: 12
+      dynamicSearchDomains:
+        type: array
+        items:
+          $ref: '#/definitions/SearchDomain'
+        readOnly: true
+        maxItems: 12
+    required:
+      - staticSearchDomains
+  StatusResponse:
+    type: object
+    properties:
+      message:
+        type: string
+        description: The status response message for the operation.
+  SystemImage:
+    type: object
+    properties:
+      primaryFirmware:
+        type: string
+        description: The version of the booted firmware.
+        pattern: ^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$
+        minLength: 7
+        maxLength: 15
+      primaryCustomer:
+        type: string
+        description: The version of the installed and running customer application (CAP).
+        pattern: ^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$
+        minLength: 7
+        maxLength: 15
+      secondaryFirmware:
+        type: string
+        description: The version of the firmware installed on the secondary partition.
+        pattern: ^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$
+        minLength: 7
+        maxLength: 15
+      secondaryCustomer:
+        type: string
+        description: The version of the customer application (CAP) installed on the secondary partition.
+        pattern: ^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$
+        minLength: 7
+        maxLength: 15
+      scmRevision:
+        type: string
+        description: Unique build hash of primaryFirmware.
+        pattern: ^[a-fA-F0-9]+$
+        minLength: 40
+        maxLength: 40
+      buildDate:
+        type: string
+        format: date-time
+        description: Timestamp of build for primaryFirmware.
+      buildPlan:
+        type: string
+        description: Traceable build identifier for primaryFirmware.
+        maxLength: 128
+    required:
+      - primaryFirmware
+  SystemInfo:
+    type: object
+    properties:
+      productModel:
+        type: string
+        description: The model number of the reader.
+        maxLength: 32
+      manufacturer:
+        type: string
+        description: The reader manufacturer.
+        maxLength: 32
+      productDescription:
+        type: string
+        description: A short, human-friendly description of the reader.
+        maxLength: 64
+      productSku:
+        type: string
+        description: The official product SKU for the reader.
+        maxLength: 32
+      productHla:
+        type: string
+        description: The reader's high-level assembly code.
+        maxLength: 32
+      pcba:
+        type: string
+        description: The assembly code for the reader's PCB.
+        maxLength: 32
+      serialNumber:
+        type: string
+        description: The serial number of the reader.
+        maxLength: 32
+    required:
+      - productModel
+      - manufacturer
+      - productDescription
+      - productSku
+      - productHla
+      - pcba
+      - serialNumber
+  TimeInfo:
+    type: object
+    properties:
+      systemTime:
+        type: string
+        description: |
+          The current system time in UTC and RFC-3339 compliant format.
+          Time precision is at second-level accuracy.
+        format: date-time
+        maxLength: 32
+        example: "2020-11-20T10:20:30Z"
+      upTime:
+        type: integer
+        description: The number of seconds that the system has been running.
+        minimum: 0
+        readOnly: true
+  UpgradeStatus:
+    type: object
+    properties:
+      status:
+        type: string
+        description: Indicates what state the upgrade process is in.
+        enum:
+          - ready
+          - verifying
+          - installing
+          - successful
+          - failed
+      message:
+        type: string
+        description: |
+          Additional information about the state of the upgrade or what may have caused the upgrade
+          to fail.
+        maxLength: 256
+    required:
+      - status
+      - message
+  UserInfo:
+    type: object
+    description: General information about a user.
+    properties:
+      userId:
+        type: integer
+        description: |
+          A unique identifier for the user. This identifier does not persist across reboots, but will
+          not change as long as the reader is up and running.
+        minimum: 0
+      username:
+        type: string
+        description: The name of the user.
+        minLength: 1
+        maxLength: 64
+    required:
+      - userId
+      - username
+responses:
+  PresetList:
+    description: OK. The list of presets for this profile.
+    schema:
+      type: array
+      items:
+        $ref: '#/definitions/PresetId'
+  PresetNotFound:
+    description: Not Found. The specified preset was not found on the system.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  PresetCreated:
+    description: Created. The preset was successfully created.
+    schema:
+      type: object
+  PresetReplaced:
+    description: No Content. The preset was successfully replaced.
+  ProfileConfigBadRequest:
+    description: Bad Request. The request body contained an invalid profile configuration.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  PresetIdForbidden:
+    description: Forbidden. Preset ID is invalid.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  PresetConflict:
+    description: Conflict. The preset is running and cannot be modified.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  PresetDeleted:
+    description: No Content. The preset was deleted from the reader.
+  PresetDeleteForbidden:
+    description: Forbidden. This preset is provided by the reader and cannot be deleted.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  ProfileStarted:
+    description: No Content. The profile was started.
+  SavedPresetBadRequest:
+    description: Bad request. The saved preset contains an invalid profile configuration.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
+  ProfileCannotStart:
+    description: Conflict. Another operation is running on the reader.
+    schema:
+      $ref: '#/definitions/ErrorResponse'
